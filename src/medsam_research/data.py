@@ -18,6 +18,7 @@ class Record:
     mask: Path | None
     dataset: str
     group: str
+    fov: Path | None = None
 
 
 def file_hash(path):
@@ -43,18 +44,20 @@ def read_manifest(path, require_masks=True):
             seen.add(sid)
             image_value = row["image"].strip()
             mask_value = (row.get("mask") or "").strip() if require_masks else ""
+            fov_value = (row.get("fov") or "").strip() if require_masks else ""
             if not image_value or (require_masks and not mask_value):
                 raise ValueError(f"{path}: missing image/mask for {sid}")
             image = (path.parent / image_value).resolve()
             mask = (path.parent / mask_value).resolve() if mask_value else None
-            for f in (image, mask):
+            fov = (path.parent / fov_value).resolve() if fov_value else None
+            for f in (image, mask, fov):
                 if f is not None and not f.is_file():
                     raise FileNotFoundError(f)
             dataset = (row.get("dataset") or "").strip()
             group = (row.get("group") or "").strip()
             if group and not dataset:
                 raise ValueError("Rows with group IDs also require a dataset namespace")
-            records.append(Record(sid, image, mask, dataset, group))
+            records.append(Record(sid, image, mask, dataset, group, fov))
     if not records:
         raise ValueError(f"Empty manifest: {path}")
     return records
@@ -89,6 +92,22 @@ def image_tensor(image, image_size):
     return torch.from_numpy(array).permute(2, 0, 1)
 
 
+def load_fov(record, shape):
+    """Use a supplied official FOV, otherwise explicitly evaluate the entire image."""
+    if record.fov is None:
+        return np.ones(shape, dtype=np.uint8)
+    with Image.open(record.fov) as im:
+        array = np.asarray(im)
+    if array.ndim != 2 or array.shape != shape or array.dtype not in (np.uint8, np.bool_):
+        raise ValueError(f"Invalid FOV shape/type: {record.fov}")
+    if len(np.unique(array)) > 2:
+        raise ValueError(f"FOV is not binary: {record.fov}")
+    valid = (array > 0).astype(np.uint8)
+    if not valid.any():
+        raise ValueError(f"Empty FOV: {record.fov}")
+    return valid
+
+
 class BinaryDataset(Dataset):
     def __init__(self, records, image_size, mask_threshold=0):
         self.records = records
@@ -106,10 +125,17 @@ class BinaryDataset(Dataset):
         small = Image.fromarray(mask).resize(
             (self.image_size, self.image_size), Image.Resampling.NEAREST
         )
+        valid = load_fov(record, mask.shape)
+        small_valid = Image.fromarray(valid).resize(
+            (self.image_size, self.image_size), Image.Resampling.NEAREST
+        )
         return {
             "image": image_tensor(image, self.image_size),
             "mask": torch.from_numpy(np.array(small, dtype=np.float32))[None],
             "native_mask": mask,
+            "valid": torch.from_numpy(np.array(small_valid, dtype=np.float32))[None],
+            "native_valid": valid,
+            "fov_used": record.fov is not None,
             "id": record.sample_id,
         }
 
@@ -118,7 +144,10 @@ def collate_samples(samples):
     return {
         "image": torch.stack([s["image"] for s in samples]),
         "mask": torch.stack([s["mask"] for s in samples]),
+        "valid": torch.stack([s["valid"] for s in samples]),
         "native_mask": [s["native_mask"] for s in samples],
+        "native_valid": [s["native_valid"] for s in samples],
+        "fov_used": [s["fov_used"] for s in samples],
         "id": [s["id"] for s in samples],
     }
 
@@ -131,10 +160,12 @@ def audit_manifests(paths, mask_threshold=0):
     seen_images, group_splits, reports = {}, {}, []
     for split_index, path in enumerate(paths):
         records = read_manifest(path)
-        empty, ungrouped = 0, 0
+        empty, ungrouped, fov_count = 0, 0, 0
         content_hash = hashlib.sha256()
         for record in records:
             image, mask = load_pair(record, mask_threshold)
+            valid = load_fov(record, mask.shape)
+            fov_count += int(record.fov is not None)
             digest = hashlib.sha256(str(image.size).encode() + image.tobytes()).hexdigest()
             if digest in seen_images:
                 raise ValueError(f"Duplicate image: {record.image} and {seen_images[digest]}")
@@ -142,6 +173,7 @@ def audit_manifests(paths, mask_threshold=0):
             content_hash.update(record.sample_id.encode())
             content_hash.update(digest.encode())
             content_hash.update(mask.tobytes())
+            content_hash.update(valid.tobytes())
             if record.group:
                 key = (record.dataset, record.group)
                 if key in group_splits and group_splits[key] != split_index:
@@ -149,7 +181,7 @@ def audit_manifests(paths, mask_threshold=0):
                 group_splits[key] = split_index
             else:
                 ungrouped += 1
-            empty += int(not mask.any())
+            empty += int(not (mask & valid).any())
         reports.append(
             {
                 "manifest": str(Path(path).resolve()),
@@ -158,6 +190,7 @@ def audit_manifests(paths, mask_threshold=0):
                 "samples": len(records),
                 "empty_masks": empty,
                 "samples_without_group": ungrouped,
+                "samples_with_fov": fov_count,
             }
         )
     return reports

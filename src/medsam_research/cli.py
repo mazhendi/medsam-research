@@ -8,6 +8,15 @@ from .data import audit_manifests
 def main(argv=None):
     parser = argparse.ArgumentParser(description="SAM 2.1 automatic binary segmentation baseline")
     sub = parser.add_subparsers(dest="command", required=True)
+    retina = sub.add_parser("prepare-retina", help="Convert DRIVE/STARE/CHASE_DB1 to paired PNGs")
+    retina.add_argument("--dataset", required=True, choices=["DRIVE", "STARE", "CHASE_DB1"])
+    retina.add_argument("--source", nargs="+", help="ZIP/TAR files or extracted directories")
+    retina.add_argument("--output", required=True)
+    retina.add_argument("--observer", type=int, choices=[1, 2], default=1)
+    retina.add_argument("--seed", type=int, default=42)
+    download = sub.add_parser("download-retina", help="Fetch STARE from its original public URLs")
+    download.add_argument("--dataset", required=True, choices=["STARE"])
+    download.add_argument("--output", required=True)
     manifest = sub.add_parser("manifest", help="Pair images and masks; does not split data")
     manifest.add_argument("--images", required=True)
     manifest.add_argument("--masks", required=True)
@@ -26,6 +35,17 @@ def main(argv=None):
         command.add_argument("--manifest", required=True)
         command.add_argument("--output", required=True, help="Must not already exist")
     args = parser.parse_args(argv)
+    if args.command == "prepare-retina":
+        from .retina import prepare_retina
+
+        report = prepare_retina(args.dataset, args.source, args.output, args.observer, args.seed)
+        print(json.dumps(report, indent=2))
+        return
+    if args.command == "download-retina":
+        from .retina import download_stare
+
+        print(json.dumps(download_stare(args.output), indent=2))
+        return
     if args.command == "manifest":
         from .manifest import create_manifest
 

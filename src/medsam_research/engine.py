@@ -175,7 +175,7 @@ def train(cfg):
             optimizer.zero_grad(set_to_none=True)
             with torch.autocast(device_type=device.type, dtype=torch.float16, enabled=use_amp):
                 logits = model(images)
-                loss = segmentation_loss(logits, targets)
+                loss = segmentation_loss(logits, targets, batch["valid"].to(device))
             if not torch.isfinite(loss):
                 raise FloatingPointError(f"Non-finite loss at epoch {epoch}")
             scaler.scale(loss).backward()

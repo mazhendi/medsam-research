@@ -41,7 +41,21 @@ curl -fL --retry 3 \
 python -c 'import torch; print(torch.cuda.is_available(), torch.cuda.get_device_name(0))'
 ```
 
-来源：[SAM 2 官方仓库](https://github.com/facebookresearch/sam2)。数据与权重均不进入本项目 Git。
+来源：[SAM 2 官方仓库](https://github.com/facebookresearch/sam2)。模型权重不进入 Git；数据的内置许可例外见下文。
+
+### 视网膜血管数据：已内置 CHASE_DB1
+
+仓库现包含许可为 CC BY 4.0 的完整 CHASE_DB1 数据压缩包及署名（28 张原图、两套标注）。
+安装环境后无需另找数据路径：
+
+```bash
+medsam prepare-retina --dataset CHASE_DB1 --output data/retina/CHASE_DB1
+medsam train --config configs/retina_chase.yaml
+```
+
+DRIVE/STARE 下载来源、导入命令、观察者选择、分组与 FOV 策略见
+[视网膜数据说明](docs/RETINAL_DATASETS.md)。CHASE_DB1 是本项目明确许可的 Git 数据例外；
+其他原始数据、生成的 PNG、检查点和实验结果保持忽略。
 
 ## 2. 准备数据清单
 
@@ -53,6 +67,9 @@ medsam manifest --images /path/to/images --masks /path/to/masks \
 ```
 
 图像与掩码按相对目录和文件主名严格配对，可以是 JPG 对 PNG。若掩码名有后缀，例如 `case_segmentation.png`，增加 `--mask-suffix _segmentation`。
+
+CSV 可选 `fov` 列指定二值视野掩码；存在时训练损失和指标仅使用视野内像素。
+没有此列或路径为空时使用全图，不自动估算 FOV。
 
 CSV 示例：
 

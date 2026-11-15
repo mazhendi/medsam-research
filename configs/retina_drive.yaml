@@ -1,0 +1,20 @@
+model:
+  sam_config: configs/sam2.1/sam2.1_hiera_s.yaml
+  checkpoint: ../checkpoints/sam2.1_hiera_small.pt
+  prompt_tokens: 4
+data:
+  train_manifest: ../data/retina/DRIVE/train.csv
+  val_manifest: ../data/retina/DRIVE/val.csv
+  mask_threshold: 0
+training:
+  seed: 42
+  epochs: 50
+  batch_size: 1
+  learning_rate: 0.0001
+  weight_decay: 0.01
+  num_workers: 2
+  amp: true
+  device: cuda
+  threshold: 0.5
+  boundary_tolerance: 2
+  output_dir: ../outputs/drive_observer1_seed42
