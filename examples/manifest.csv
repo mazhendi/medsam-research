@@ -1,0 +1,3 @@
+id,image,mask,dataset,group
+sample_001,../data/images/sample_001.png,../data/masks/sample_001.png,ClinicDB,video_01
+sample_002,../data/images/sample_002.png,../data/masks/sample_002.png,ClinicDB,video_01
