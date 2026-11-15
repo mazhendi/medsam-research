@@ -1,0 +1,21 @@
+# 设计模板，尚无加载器；路径需在训练机器填写。
+model:
+  name: sam2.1_hiera_small
+  config: configs/sam2.1/sam2.1_hiera_s.yaml
+  checkpoint: null
+  upstream_commit: null
+  freeze_encoder: true
+  automatic_prompt: learned_task_tokens
+
+data:
+  train_manifest: null
+  validation_manifest: null
+  external_test_manifest: null
+  # Manifest 应记录患者/视频/中心分组，禁止从外部测试集调参。
+
+experiment:
+  seed: 42
+  mode: supervised_baseline
+  local_reread: false
+  lora: false
+  action_selector: false
