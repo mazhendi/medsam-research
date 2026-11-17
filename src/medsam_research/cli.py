@@ -49,6 +49,23 @@ def main(argv=None):
     correction.add_argument("--head-size", type=int, default=128)
     correction.add_argument("--learning-rate", type=float, default=0.001)
     correction.add_argument("--preservation", type=float, default=0.1)
+    granularity = sub.add_parser("train-granularity", help="Train regional supervision prototype")
+    granularity.add_argument("--config", required=True)
+    granularity.add_argument("--checkpoint", required=True, help="Existing baseline best.pt")
+    granularity.add_argument("--output", required=True)
+    granularity.add_argument("--mode", choices=["pixel", "fixed", "curriculum", "meta", "reweight"],
+                             default="meta")
+    granularity.add_argument("--epochs", type=int, default=30)
+    granularity.add_argument("--grid", type=int, default=8)
+    granularity.add_argument("--learning-rate", type=float, default=0.01)
+    granularity.add_argument("--controller-lr", type=float, default=0.001)
+    granularity.add_argument("--minimum-pixel-weight", type=float, default=0.1)
+    granular_eval = sub.add_parser("evaluate-granularity", help="Evaluate fixed adapter")
+    granular_eval.add_argument("--config", required=True)
+    granular_eval.add_argument("--checkpoint", required=True, help="Original baseline best.pt")
+    granular_eval.add_argument("--adapter", required=True, help="best_granularity.pt")
+    granular_eval.add_argument("--manifest", required=True)
+    granular_eval.add_argument("--output", required=True)
     args = parser.parse_args(argv)
     if args.command == "prepare-retina":
         from .retina import prepare_retina
@@ -75,7 +92,16 @@ def main(argv=None):
     from . import engine
 
     cfg = load_config(args.config)
-    if args.command == "train-correction":
+    if args.command == "train-granularity":
+        from .granularity import train_granularity
+
+        train_granularity(cfg, args.checkpoint, args.output, args.mode, args.epochs, args.grid,
+                          args.learning_rate, args.controller_lr, args.minimum_pixel_weight)
+    elif args.command == "evaluate-granularity":
+        from .granularity import evaluate_granularity
+
+        evaluate_granularity(cfg, args.checkpoint, args.adapter, args.manifest, args.output)
+    elif args.command == "train-correction":
         from .correction import train_correction
 
         train_correction(cfg, args.checkpoint, args.output, args.epochs, args.grid,

@@ -158,3 +158,11 @@ medsam train-correction --config configs/retina_chase.yaml --checkpoint outputs/
 ```
 
 冻结已有基线，训练共享的细节/上下文纠错头，输出验证集整图和逐区域对照；尚无动作选择器。详见 [结构、损失和实验限制](docs/CORRECTION.md)。
+
+### 区域监督精度控制器（独立研究原型）
+
+```bash
+medsam train-granularity --config configs/retina_chase.yaml --checkpoint outputs/chase_observer1_seed42/best.pt --output outputs/chase_granularity_meta --mode meta --epochs 30
+```
+
+冻结原基线，新增轻量分割适配头，以训练集内部不同受试者的元目标学习区域占比/像素BCE的混合权重。支持pixel、fixed、curriculum、meta、reweight五组对照；独立验证集不更新控制器，推理不需要控制器。先阅读[实验步骤与限制](docs/GRANULARITY.md)，与pixel对照一起运行；本模块尚无已验证的创新或性能结论。
