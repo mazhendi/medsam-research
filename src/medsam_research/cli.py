@@ -66,6 +66,14 @@ def main(argv=None):
     granular_eval.add_argument("--adapter", required=True, help="best_granularity.pt")
     granular_eval.add_argument("--manifest", required=True)
     granular_eval.add_argument("--output", required=True)
+    probe = sub.add_parser("probe-adapter", help="Training-only small-set fitting diagnostic")
+    probe.add_argument("--config", required=True)
+    probe.add_argument("--checkpoint", required=True)
+    probe.add_argument("--output", required=True)
+    probe.add_argument("--steps", type=int, default=100)
+    probe.add_argument("--samples", type=int, default=2)
+    probe.add_argument("--sgd-rates", nargs="+", type=float, default=[0.01, 0.1, 1.0])
+    probe.add_argument("--adam-lr", type=float, default=0.001)
     args = parser.parse_args(argv)
     if args.command == "prepare-retina":
         from .retina import prepare_retina
@@ -92,7 +100,12 @@ def main(argv=None):
     from . import engine
 
     cfg = load_config(args.config)
-    if args.command == "train-granularity":
+    if args.command == "probe-adapter":
+        from .adapter_probe import probe_adapter
+
+        probe_adapter(cfg, args.checkpoint, args.output, args.steps, args.samples,
+                      args.sgd_rates, args.adam_lr)
+    elif args.command == "train-granularity":
         from .granularity import train_granularity
 
         train_granularity(cfg, args.checkpoint, args.output, args.mode, args.epochs, args.grid,

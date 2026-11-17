@@ -174,6 +174,28 @@ def validate(adapter, cached, records, cfg, device, output=None, controller=None
     return summary
 
 
+
+@torch.no_grad()
+def training_fit_metrics(adapter, cached, device, threshold):
+    """A fixed objective across epochs and arms, independent of controller weights."""
+    losses, dice, residuals, maxima = [], [], [], []
+    for item in cached:
+        sample = to_device(item, device)
+        logits = adapter(sample['feature'], sample['baseline'])
+        losses.append(segmentation_loss(logits, sample['target'], sample['valid']).item())
+        valid = sample['valid'].bool()
+        p = logits.sigmoid().ge(threshold) & valid
+        y = sample['target'].bool() & valid
+        total = (p.sum()+y.sum()).item()
+        dice.append(2*(p & y).sum().item()/total if total else 1.)
+        residual = (logits-sample['baseline'])[valid].abs()
+        residuals.append(residual.mean().item())
+        maxima.append(residual.max().item())
+    return {'pixel_bce_dice_loss': float(np.mean(losses)),
+            'dice_model_grid': float(np.mean(dice)),
+            'residual_abs_mean': float(np.mean(residuals)), 'residual_abs_max': max(maxima)}
+
+
 def train_granularity(cfg, checkpoint, output, mode='meta', epochs=30, grid=8,
                       learning_rate=0.01, controller_lr=0.001, minimum=0.1):
     if mode not in MODES or epochs < 1 or grid < 1 or not 0 < minimum < 1:
@@ -220,6 +242,8 @@ def train_granularity(cfg, checkpoint, output, mode='meta', epochs=30, grid=8,
     write_json(out/'provenance.json', provenance)
     initial = validate(adapter, val_cache, val_records, cfg, device)
     write_json(out/'initial_validation.json', initial)
+    write_json(out/'initial_training.json',
+               training_fit_metrics(adapter, train_cache, device, cfg.training.threshold))
     best = initial['adapted']['dice']
     def artifact(epoch):
         return {'format_version': 1, 'kind': 'granularity_adapter', 'epoch': epoch,
@@ -235,6 +259,7 @@ def train_granularity(cfg, checkpoint, output, mode='meta', epochs=30, grid=8,
         order = list(range(len(train_cache)))
         random.shuffle(order)
         losses, meta_losses, grad_norms = [], [], []
+        adapter_grad_norms, update_norms, alpha_values = [], [], []
         for i in order:
             support = to_device(train_cache[i], device)
             # Sample for every arm, preserving identical RNG consumption and support order.
@@ -268,14 +293,26 @@ def train_granularity(cfg, checkpoint, output, mode='meta', epochs=30, grid=8,
             # No clipping/momentum: actual and virtual SGD have the same update rule.
             if any(not torch.isfinite(p.grad).all() for p in adapter.parameters()):
                 raise FloatingPointError('Nonfinite adapter gradient')
+            adapter_grad_norms.append(sum(p.grad.detach().square().sum()
+                                          for p in adapter.parameters()).sqrt().item())
+            before = [p.detach().clone() for p in adapter.parameters()]
             optimizer.step()
+            update_norms.append(sum((p.detach()-old).square().sum()
+                                    for p, old in zip(adapter.parameters(), before)).sqrt().item())
             losses.append(loss.item())
             a = alpha[0, 0].cpu().numpy()
+            alpha_values.extend(a.reshape(-1).tolist())
             for y, x in np.ndindex(a.shape):
                 history_weights.append({'epoch': epoch, 'id': support['id'], 'row': y,
                                         'column': x, 'pixel_weight': float(a[y, x])})
         summary = validate(adapter, val_cache, val_records, cfg, device)
         record = {'epoch': epoch, 'train_loss': float(np.mean(losses)), 'validation': summary,
+                  'training_fixed_objective': training_fit_metrics(
+                      adapter, train_cache, device, cfg.training.threshold),
+                  'adapter_gradient_norm': float(np.mean(adapter_grad_norms)),
+                  'adapter_update_norm': float(np.mean(update_norms)),
+                  'pixel_weight_std': float(np.std(alpha_values)),
+                  'pixel_weight_min': min(alpha_values), 'pixel_weight_max': max(alpha_values),
                   'meta_loss': float(np.mean(meta_losses)) if meta_losses else None,
                   'controller_gradient_norm': float(np.mean(grad_norms)) if grad_norms else None,
                   'pixel_weight_mean': float(np.mean([r['pixel_weight'] for r in history_weights

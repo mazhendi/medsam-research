@@ -87,3 +87,30 @@ medsam evaluate-granularity --config configs/retina_chase.yaml --checkpoint outp
 评估只加载冻结基线与分割适配头，不调用控制器，不更新参数，检查适配头绑定的基线哈希和评估设置，并审计训练/验证/外部数据重叠。
 
 本轮实现不意味着证明新颖性；还需与可学习课程、元重加权、多粒度/部分标签监督等方法作系统比较。
+
+## 先决检查：pixel几乎不学习时，暂停控制器结论
+
+如果pixel模式30轮的固定分割损失和Dice几乎不变，先运行以下**仅训练集的小样本拟合诊断**，不要继续用弱适配头判断meta是否有效：
+
+```bash
+medsam probe-adapter --config configs/retina_chase.yaml --checkpoint outputs/chase_observer1_seed42/best.pt --output outputs/chase_adapter_probe --steps 100 --samples 2
+```
+
+固定两张训练图组成完整小批次；各组使用相同初始化和相同数据，分别检查SGD学习率0.01/0.1/1.0、Adam学习率0.001。输出summary.json、probe_history.csv、per_layer.csv，包括：
+
+- 原始特征尺度、固定BCE+Dice损失、模型输入网格上的训练Dice；
+- 每步参数梯度、真实更新量、相对初始化的漂移；
+- 预测logits残差幅度，区分“参数变了但预测几乎没变”；
+- 数值发散的显式错误记录，而非推荐使用发散学习率。
+
+probe指标是选中训练小批次的拟合情况，Dice为合并像素计数的结果，不是原图验证集宏平均，不能与summary中的验证Dice直接比较。它不读取验证结果选最优项，也不会修改基线或正式训练默认优化器。
+
+解释应基于结果：
+
+1. SGD弱、Adam或更大SGD步长明显学动：优先排查优化尺度，下一版需同步修改真实/虚拟更新并重新做元梯度检查，不能只把实际SGD替换为Adam。
+2. 几组都难以拟合：继续检查64×64深层特征和1×1残差头的表示能力，以及冻结特征是否包含所需信息；优化器扫描本身不能证明是哪一项限制。
+3. 训练能拟合、验证不提高：再讨论泛化、过拟合与控制器，而不是把验证无提升等同梯度断开。
+
+零初始化使第一个更新中前层卷积梯度为零是预期行为；后续是否获得非零梯度和有效更新才关键。已有单元测试验证了这一过程，但合成数据可学不意味着真实已收敛基线仍有可利用的表示空间。
+
+更新后的train-granularity额外记录initial_training.json、逐epoch固定像素BCE+Dice训练目标、适配头梯度/真实更新量、预测残差、alpha的标准差和范围。原始train_loss随alpha改变了目标，不适合作为meta跨epoch学习进度的唯一依据。1e-8的元梯度非零不代表控制器学到有价值的选择，Adam也可能积累这种梯度而造成alpha漂移；平均alpha接近1可能只是在回到像素监督。

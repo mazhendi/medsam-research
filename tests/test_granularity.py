@@ -101,6 +101,13 @@ def test_training_and_fixed_adapter_evaluation(tmp_path, monkeypatch, mode):
                                 output_dir=str(tmp_path/'baseline')))
     monkeypatch.setattr(engine, 'build_model', lambda cfg, device: FeatureTiny().to(device))
     baseline = engine.train(cfg)/'best.pt'
+    if mode == 'pixel':
+        from medsam_research.adapter_probe import probe_adapter
+
+        arms = probe_adapter(cfg, baseline, tmp_path/'probe', steps=3, samples=2,
+                             sgd_rates=(.01, .1), adam_lr=.001)
+        assert len(arms) == 3 and all(a['error'] is None for a in arms)
+        assert (tmp_path/'probe'/'per_layer.csv').exists()
     original = baseline.read_bytes()
     out = tmp_path/mode
     train_granularity(cfg, baseline, out, mode=mode, epochs=2, grid=4)

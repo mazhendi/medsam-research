@@ -166,3 +166,11 @@ medsam train-granularity --config configs/retina_chase.yaml --checkpoint outputs
 ```
 
 冻结原基线，新增轻量分割适配头，以训练集内部不同受试者的元目标学习区域占比/像素BCE的混合权重。支持pixel、fixed、curriculum、meta、reweight五组对照；独立验证集不更新控制器，推理不需要控制器。先阅读[实验步骤与限制](docs/GRANULARITY.md)，与pixel对照一起运行；本模块尚无已验证的创新或性能结论。
+
+如果 `pixel` 对照的训练损失和预测几乎不变，先暂停控制器对照，运行训练集小样本拟合诊断：
+
+```bash
+medsam probe-adapter --config configs/retina_chase.yaml --checkpoint outputs/chase_observer1_seed42/best.pt --output outputs/chase_adapter_probe --steps 100 --samples 2
+```
+
+比较相同初始化下不同SGD步长与Adam的拟合、梯度、实际参数更新及预测残差。它不会修改正式训练优化器，解释方式见[诊断说明](docs/GRANULARITY.md#先决检查pixel几乎不学习时暂停控制器结论)。
