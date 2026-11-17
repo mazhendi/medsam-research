@@ -7,7 +7,7 @@ name = "medsam-research"
 version = "0.2.0"
 description = "Reproducible SAM 2.1 automatic binary medical segmentation baseline"
 requires-python = ">=3.10"
-dependencies = ["torch>=2.5.1", "numpy>=1.24", "Pillow>=10", "PyYAML>=6", "scipy>=1.11"]
+dependencies = ["torch>=2.5.1", "numpy>=1.24", "Pillow>=10", "PyYAML>=6", "scipy>=1.11", "scikit-image>=0.22"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "ruff>=0.9"]

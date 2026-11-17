@@ -28,12 +28,18 @@ def main(argv=None):
     audit.add_argument("--mask-threshold", type=int, default=0)
     train = sub.add_parser("train", help="Train task tokens and mask decoder")
     train.add_argument("--config", required=True)
-    for name in ("evaluate", "predict"):
+    for name in ("evaluate", "predict", "diagnose"):
         command = sub.add_parser(name)
         command.add_argument("--config", required=True)
         command.add_argument("--checkpoint", required=True, help="Project best.pt or last.pt")
         command.add_argument("--manifest", required=True)
         command.add_argument("--output", required=True, help="Must not already exist")
+        if name == "diagnose":
+            command.add_argument("--grid", type=int, default=2)
+            command.add_argument("--overlap", type=float, default=0.25)
+            command.add_argument("--blend", type=float, default=0.5)
+            command.add_argument("--thin-width", type=float, default=4.0)
+            command.add_argument("--medium-width", type=float, default=8.0)
     args = parser.parse_args(argv)
     if args.command == "prepare-retina":
         from .retina import prepare_retina
@@ -60,7 +66,12 @@ def main(argv=None):
     from . import engine
 
     cfg = load_config(args.config)
-    if args.command == "train":
+    if args.command == "diagnose":
+        from .diagnostics import diagnose
+
+        diagnose(cfg, args.checkpoint, args.manifest, args.output, args.grid, args.overlap,
+                 args.blend, args.thin_width, args.medium_width)
+    elif args.command == "train":
         engine.train(cfg)
     else:
         getattr(engine, args.command)(cfg, args.checkpoint, args.manifest, args.output)

@@ -139,3 +139,14 @@ GitHub Actions 执行 CPU 静态检查和普通测试。真实 4090、默认 102
 ## 后续研究顺序
 
 先跑通单任务真实基线，再独立加入原图局部重读、LoRA，验证不同动作收益是否互补。只有现象成立，才训练收益预测器。无标签适配目标尚未确定，受监督微调不得冒充测试时适配。
+
+### 下一步：验证集错误诊断与局部重读对照
+
+已有训练权重可直接运行，无需重新训练：
+
+```bash
+pip install -e ".[dev]"
+medsam diagnose --config configs/retina_chase.yaml --checkpoint outputs/chase_observer1_seed42/best.pt --manifest data/retina/CHASE_DB1/val.csv --output outputs/chase_diagnose_grid2
+```
+
+输出原图尺寸的漏分/误分图、血管中心线诊断、固定网格重读前后的配对指标和计算成本。详细设置与限制见 [诊断说明](docs/DIAGNOSTICS.md)。固定网格重读属于对照实验，不代表已提出创新方法或已验证精度提升。
