@@ -21,7 +21,7 @@
 
 从同一dataset抽取不同group的训练图A/B（group应填写受试者或视频序列）。在A上计算控制器加权损失，使用`create_graph=True`计算适配头梯度，构造一次虚拟SGD更新；用虚拟参数在B上计算固定BCE+Dice，反传更新控制器。随后使用更新后的控制器权重，真正更新适配头。
 
-虚拟与实际适配更新都采用无动量、无权重衰减的SGD，默认学习率0.01；控制器采用Adam，默认0.001。特征及控制器输入概率停止梯度，但通过虚拟参数更新保留控制器的元梯度。冻结基线不会更新。
+新版默认虚拟与实际适配更新都采用Adam，学习率0.001，不使用权重衰减或梯度裁剪。虚拟步骤读取真实优化器已有一阶/二阶矩和步数，对当前一步保留可微计算，不修改真实优化器状态；历史状态停止梯度。控制器同样采用Adam，学习率0.001。可用`--optimizer sgd --learning-rate 0.01`复现旧版无动量SGD。特征及控制器输入概率停止梯度，但通过虚拟参数更新保留控制器的元梯度。冻结基线不会更新。
 
 A/B都是训练样本，不使用独立验证集更新控制器。每个dataset至少需要两个不同group；不能把同一儿童双眼当作不同受试者。不同dataset之间不做元配对，避免不同任务标签直接混用。group缺失会报错，而不是擅自视每张图为独立患者。
 
@@ -46,8 +46,8 @@ A/B都是训练样本，不使用独立验证集更新控制器。每个dataset�
 ```bash
 git pull
 pip install -e ".[dev]"
-medsam train-granularity --config configs/retina_chase.yaml --checkpoint outputs/chase_observer1_seed42/best.pt --output outputs/chase_granularity_pixel --mode pixel --epochs 30
-medsam train-granularity --config configs/retina_chase.yaml --checkpoint outputs/chase_observer1_seed42/best.pt --output outputs/chase_granularity_meta --mode meta --epochs 30
+medsam train-granularity --config configs/retina_chase.yaml --checkpoint outputs/chase_observer1_seed42/best.pt --output outputs/chase_granularity_pixel --mode pixel --optimizer adam --learning-rate 0.001 --epochs 50
+medsam train-granularity --config configs/retina_chase.yaml --checkpoint outputs/chase_observer1_seed42/best.pt --output outputs/chase_granularity_meta --mode meta --optimizer adam --learning-rate 0.001 --epochs 50
 ```
 
 Windows PowerShell可用以上单行命令。输出目录不能已存在。原YAML无须修改。每组运行先提取一次冻结全图特征缓存到CPU内存，后续训练不重复运行SAM编码器；因此推理图仍为SAM全图+轻量残差头，没有局部高分辨率信息。当前CPU缓存采用FP32，1024输入、256×64×64特征时，每张图的特征/logits/目标/FOV合计约16 MiB，1000张约16 GiB；大数据集需要足够内存，后续应改磁盘缓存或分批提取。缓存阶段与适配训练阶段分别计时；GPU峰值字段明确只覆盖缓存完成后的训练/验证，不代表提取SAM特征的峰值。
@@ -55,9 +55,9 @@ Windows PowerShell可用以上单行命令。输出目录不能已存在。原YA
 完成后补齐其余三组：
 
 ```bash
-medsam train-granularity --config configs/retina_chase.yaml --checkpoint outputs/chase_observer1_seed42/best.pt --output outputs/chase_granularity_fixed --mode fixed --epochs 30
-medsam train-granularity --config configs/retina_chase.yaml --checkpoint outputs/chase_observer1_seed42/best.pt --output outputs/chase_granularity_curriculum --mode curriculum --epochs 30
-medsam train-granularity --config configs/retina_chase.yaml --checkpoint outputs/chase_observer1_seed42/best.pt --output outputs/chase_granularity_reweight --mode reweight --epochs 30
+medsam train-granularity --config configs/retina_chase.yaml --checkpoint outputs/chase_observer1_seed42/best.pt --output outputs/chase_granularity_fixed --mode fixed --optimizer adam --learning-rate 0.001 --epochs 50
+medsam train-granularity --config configs/retina_chase.yaml --checkpoint outputs/chase_observer1_seed42/best.pt --output outputs/chase_granularity_curriculum --mode curriculum --optimizer adam --learning-rate 0.001 --epochs 50
+medsam train-granularity --config configs/retina_chase.yaml --checkpoint outputs/chase_observer1_seed42/best.pt --output outputs/chase_granularity_reweight --mode reweight --optimizer adam --learning-rate 0.001 --epochs 50
 ```
 
 ## 输出与判断
@@ -114,3 +114,18 @@ probe指标是选中训练小批次的拟合情况，Dice为合并像素计数�
 零初始化使第一个更新中前层卷积梯度为零是预期行为；后续是否获得非零梯度和有效更新才关键。已有单元测试验证了这一过程，但合成数据可学不意味着真实已收敛基线仍有可利用的表示空间。
 
 更新后的train-granularity额外记录initial_training.json、逐epoch固定像素BCE+Dice训练目标、适配头梯度/真实更新量、预测残差、alpha的标准差和范围。原始train_loss随alpha改变了目标，不适合作为meta跨epoch学习进度的唯一依据。1e-8的元梯度非零不代表控制器学到有价值的选择，Adam也可能积累这种梯度而造成alpha漂移；平均alpha接近1可能只是在回到像素监督。
+
+
+## 优化修正与轮数建议
+
+旧版默认SGD 0.01在用户已训练基线上的残差更新几乎为零。因此新版先提供Adam作为独立优化对照，保持适配头结构和所有监督目标不变；这不是已经证实的完整修复。尚未取得用户真实权重上的拟合诊断，不能排除64×64特征的表示瓶颈。
+
+- 先运行`probe-adapter --steps 200 --samples 2`。这是200次小批次参数更新，不是200个epoch；先确认训练损失、实际参数漂移和预测残差明显变化。
+- 然后只运行pixel模式50轮。CHASE16张训练图对应800次真实适配更新。第10轮就检查`training_fixed_objective`、适配更新范数和logits残差；若仍几乎不变，不应靠加到200轮解决。
+- pixel可学习后再跑meta50轮；同一批对照使用相同优化器、学习率、种子和轮数，且记录额外元训练开销。
+- 若50轮末训练和验证仍在改善，可以预先把下一组完整对照预算定为100轮（1600次真实更新）；目前没有resume入口，需新输出目录从同一基线初始化，不可将前后预算混作公平比较。
+- 若训练损失下降、验证早已平台或下降，则不延长。已有best checkpoint保留第0轮候选和整个预算内的最佳验证轮次，测试集保持锁定。
+
+Adam并不保证控制器更有效：在梯度符号不变的首次更新中，自适应归一化可能减弱其对损失权重幅度的敏感性，因此即使分割头学动，元梯度仍可能很弱。代码没有人为放大元梯度掩盖问题；若出现该情况，应研究元目标与虚拟更新的可辨识性，而不是把alpha漂移当成功。新增测试覆盖零初始化有限梯度、已有动量状态下虚拟/真实Adam更新一致性，以及控制器超梯度有限差分校验。
+
+probe的summary新增`supervision_gradient_contrast`，比较固定占比/像素监督（两者都保留Dice）的梯度范数、夹角及差值。此诊断只检查两个选项是否在初始头上可区分，不证明它们都能提高泛化。

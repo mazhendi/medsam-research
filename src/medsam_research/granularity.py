@@ -94,13 +94,47 @@ def supervised_loss(logits, sample, alpha, grid, mode):
     return .5*mixed + .5*(1-dice)
 
 
-def meta_objective(adapter, controller, support, query, grid, step_size, mode='meta'):
+def virtual_parameters(adapter, gradients, step_size, optimizer=None):
+    """Differentiate one real optimizer step, treating existing state as fixed history."""
+    named = dict(adapter.named_parameters())
+    if optimizer is None:
+        return {key: value-step_size*g for (key, value), g in zip(named.items(), gradients)}
+    if len(optimizer.param_groups) != 1:
+        raise ValueError('Virtual step supports a single parameter group')
+    group = optimizer.param_groups[0]
+    if group['lr'] != step_size or group.get('weight_decay', 0) or group.get('maximize', False):
+        raise ValueError('Virtual and actual optimizer settings differ')
+    if isinstance(optimizer, torch.optim.SGD):
+        if group.get('momentum', 0):
+            raise ValueError('Momentum SGD is not implemented for the virtual step')
+        return {key: value-step_size*g for (key, value), g in zip(named.items(), gradients)}
+    if not isinstance(optimizer, torch.optim.Adam) or group.get('amsgrad', False):
+        raise ValueError('Unsupported optimizer for differentiable virtual step')
+    beta1, beta2 = group['betas']
+    result = {}
+    for (name, parameter), gradient in zip(named.items(), gradients):
+        state = optimizer.state.get(parameter, {})
+        step = int(state.get('step', 0)) + 1
+        previous_m = state.get('exp_avg', torch.zeros_like(parameter)).detach()
+        previous_v = state.get('exp_avg_sq', torch.zeros_like(parameter)).detach()
+        m = beta1*previous_m + (1-beta1)*gradient
+        v = beta2*previous_v + (1-beta2)*gradient.square()
+        corrected_v = v/(1-beta2**step)
+        # sqrt has an infinite derivative at zero. Preserve the exact zero value,
+        # with zero derivative there, to handle zero-initialized head gradients.
+        root = torch.where(corrected_v > 0, corrected_v.clamp_min(1e-30).sqrt(),
+                           torch.zeros_like(corrected_v))
+        result[name] = parameter-step_size*(m/(1-beta1**step))/(root+group['eps'])
+    return result
+
+
+def meta_objective(adapter, controller, support, query, grid, step_size, mode='meta',
+                   optimizer=None):
     logits = adapter(support['feature'], support['baseline'])
     alpha = controller(support['feature'], logits)
     inner = supervised_loss(logits, support, alpha, grid, mode)
-    named = dict(adapter.named_parameters())
-    gradients = torch.autograd.grad(inner, tuple(named.values()), create_graph=True)
-    virtual = {key: value-step_size*g for (key, value), g in zip(named.items(), gradients)}
+    gradients = torch.autograd.grad(inner, tuple(adapter.parameters()), create_graph=True)
+    virtual = virtual_parameters(adapter, gradients, step_size, optimizer)
     query_logits = functional_call(adapter, virtual, (query['feature'], query['baseline']))
     return segmentation_loss(query_logits, query['target'], query['valid'])
 
@@ -196,8 +230,12 @@ def training_fit_metrics(adapter, cached, device, threshold):
             'residual_abs_mean': float(np.mean(residuals)), 'residual_abs_max': max(maxima)}
 
 
-def train_granularity(cfg, checkpoint, output, mode='meta', epochs=30, grid=8,
-                      learning_rate=0.01, controller_lr=0.001, minimum=0.1):
+def train_granularity(cfg, checkpoint, output, mode='meta', epochs=50, grid=8,
+                      learning_rate=None, controller_lr=0.001, minimum=0.1, optimizer_name='adam'):
+    if optimizer_name not in ('adam', 'sgd'):
+        raise ValueError('Optimizer must be adam or sgd')
+    if learning_rate is None:
+        learning_rate = .001 if optimizer_name == 'adam' else .01
     if mode not in MODES or epochs < 1 or grid < 1 or not 0 < minimum < 1:
         raise ValueError('Invalid mode, epochs, grid or minimum pixel weight')
     if not all(math.isfinite(v) and v > 0 for v in (learning_rate, controller_lr)):
@@ -225,14 +263,17 @@ def train_granularity(cfg, checkpoint, output, mode='meta', epochs=30, grid=8,
         torch.cuda.reset_peak_memory_stats(device)
     adapter = FeatureAdapter(channels).to(device)
     controller = SupervisionController(channels, grid, minimum).to(device)
-    # Match actual adapter SGD update to the differentiable one-step virtual update.
-    optimizer = torch.optim.SGD(adapter.parameters(), lr=learning_rate)
+    # Actual and virtual updates use the same optimizer and existing moment state.
+    optimizer = (torch.optim.Adam(adapter.parameters(), lr=learning_rate, foreach=False)
+                 if optimizer_name == 'adam'
+                 else torch.optim.SGD(adapter.parameters(), lr=learning_rate))
     control_optimizer = torch.optim.Adam(controller.parameters(), lr=controller_lr)
     out.mkdir(parents=True)
     provenance = {'kind': 'regional_supervision_prototype', 'mode': mode,
                   'project_commit': git_revision(), 'baseline_config': cfg.to_dict(),
                   'baseline_checkpoint_sha256': file_hash(checkpoint), 'data_audit': audit,
                   'epochs': epochs, 'grid': grid, 'learning_rate': learning_rate,
+                  'optimizer': optimizer_name, 'optimizer_state_in_virtual_step': True,
                   'controller_lr': controller_lr, 'minimum_pixel_weight': minimum,
                   'channels': channels, 'seed': cfg.training.seed,
                   'cache_seconds': time.perf_counter()-started,
@@ -267,7 +308,7 @@ def train_granularity(cfg, checkpoint, output, mode='meta', epochs=30, grid=8,
             if mode in ('meta', 'reweight'):
                 control_optimizer.zero_grad(set_to_none=True)
                 outer = meta_objective(adapter, controller, support, query, grid,
-                                       learning_rate, mode)
+                                       learning_rate, mode, optimizer)
                 gradients = torch.autograd.grad(outer, tuple(controller.parameters()))
                 norm = sum(g.detach().square().sum() for g in gradients).sqrt()
                 if not torch.isfinite(outer) or not torch.isfinite(norm):
@@ -290,7 +331,8 @@ def train_granularity(cfg, checkpoint, output, mode='meta', epochs=30, grid=8,
             if not torch.isfinite(loss):
                 raise FloatingPointError('Nonfinite adaptation loss')
             loss.backward()
-            # No clipping/momentum: actual and virtual SGD have the same update rule.
+            # No clipping: actual and virtual updates must have the same rule.
+
             if any(not torch.isfinite(p.grad).all() for p in adapter.parameters()):
                 raise FloatingPointError('Nonfinite adapter gradient')
             adapter_grad_norms.append(sum(p.grad.detach().square().sum()

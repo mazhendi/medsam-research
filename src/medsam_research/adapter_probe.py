@@ -8,7 +8,7 @@ import torch
 
 from .data import audit_manifests, file_hash, read_manifest
 from .engine import _restore, git_revision, set_seed, write_csv, write_json
-from .granularity import FeatureAdapter, cache_samples
+from .granularity import FeatureAdapter, cache_samples, supervised_loss
 from .metrics import segmentation_loss
 
 
@@ -73,6 +73,30 @@ def fit_probe(sample, channels, steps, optimizer_name, lr, seed, threshold):
     return rows, layer_rows, None
 
 
+
+def supervision_gradient_probe(sample, channels, seed, grid=8):
+    """Test whether the two supervision choices produce distinguishable updates."""
+    set_seed(seed)
+    adapter = FeatureAdapter(channels).to(sample['feature'].device)
+    vectors, losses = [], []
+    for fraction in (0., 1.):
+        logits = adapter(sample['feature'], sample['baseline'])
+        alpha = torch.full((len(logits), 1, grid, grid), fraction, device=logits.device)
+        loss = supervised_loss(logits, sample, alpha, grid, 'fixed')
+        gradients = torch.autograd.grad(loss, tuple(adapter.parameters()))
+        vectors.append(torch.cat([g.detach().reshape(-1) for g in gradients]))
+        losses.append(loss.item())
+    coarse, pixel = vectors
+    norm_c, norm_p = coarse.norm().item(), pixel.norm().item()
+    denominator = norm_c*norm_p
+    return {'coarse_plus_dice_loss': losses[0], 'pixel_plus_dice_loss': losses[1],
+            'coarse_gradient_norm': norm_c, 'pixel_gradient_norm': norm_p,
+            'gradient_cosine': (coarse@pixel).item()/denominator if denominator > 0 else None,
+            'gradient_difference_norm': (coarse-pixel).norm().item(),
+            'note': 'Initial head, full probe batch; both choices retain fixed Dice. '
+                    'Different loss values alone do not prove different useful updates.'}
+
+
 def probe_adapter(cfg, checkpoint, output, steps=100, samples=2,
                   sgd_rates=(0.01, 0.1, 1.0), adam_lr=0.001):
     if steps < 1 or samples < 1 or not sgd_rates:
@@ -111,6 +135,7 @@ def probe_adapter(cfg, checkpoint, output, steps=100, samples=2,
         'abs_max': batch['feature'].abs().max(), 'rms': batch['feature'].square().mean().sqrt(),
         'baseline_abs_mean': batch['baseline'].abs().mean(),
     }.items()}
+    contrast = supervision_gradient_probe(batch, batch['feature'].shape[1], cfg.training.seed)
     rows, layers, summaries = [], [], []
     arms = [('sgd', lr) for lr in sgd_rates] + [('adam', adam_lr)]
     for index, (optimizer, lr) in enumerate(arms):
@@ -133,7 +158,7 @@ def probe_adapter(cfg, checkpoint, output, steps=100, samples=2,
         'kind': 'training_only_adapter_probe', 'project_commit': git_revision(),
         'baseline_checkpoint_sha256': file_hash(checkpoint), 'data_audit': audit,
         'sample_ids': [r.sample_id for r in chosen], 'steps': steps,
-        'feature_stats': feature_stats, 'arms': summaries,
+        'feature_stats': feature_stats, 'supervision_gradient_contrast': contrast, 'arms': summaries,
         'note': 'Same small full batch and identical initialization in all arms. '
                 'Dice is pooled over selected training images at model input resolution. '
                 'No validation scoring or controller. This probes fitting, not generalization; '

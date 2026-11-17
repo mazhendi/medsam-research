@@ -78,7 +78,8 @@ def test_group_pairs_require_different_subject_same_dataset():
 
 
 @pytest.mark.parametrize('mode', ['pixel', 'fixed', 'curriculum', 'meta', 'reweight'])
-def test_training_and_fixed_adapter_evaluation(tmp_path, monkeypatch, mode):
+@pytest.mark.parametrize('optimizer_name', ['adam', 'sgd'])
+def test_training_and_fixed_adapter_evaluation(tmp_path, monkeypatch, mode, optimizer_name):
     class FeatureTiny(TinySegmenter):
         def forward_with_features(self, image):
             return self(image), image
@@ -110,7 +111,8 @@ def test_training_and_fixed_adapter_evaluation(tmp_path, monkeypatch, mode):
         assert (tmp_path/'probe'/'per_layer.csv').exists()
     original = baseline.read_bytes()
     out = tmp_path/mode
-    train_granularity(cfg, baseline, out, mode=mode, epochs=2, grid=4)
+    train_granularity(cfg, baseline, out, mode=mode, epochs=2, grid=4,
+                      optimizer_name=optimizer_name)
     initial = json.loads((out/'initial_validation.json').read_text())
     assert initial['global'] == initial['adapted']
     assert baseline.read_bytes() == original
@@ -127,3 +129,69 @@ def test_training_and_fixed_adapter_evaluation(tmp_path, monkeypatch, mode):
     torch.save(saved, out/'wrong.pt')
     with pytest.raises(ValueError, match='different baseline'):
         evaluate_granularity(cfg, baseline, out/'wrong.pt', val, tmp_path/'bad')
+
+
+@pytest.mark.parametrize('warmup', [0, 3])
+def test_virtual_adam_matches_real_step_and_preserves_moments(warmup):
+    from medsam_research.granularity import virtual_parameters
+
+    torch.manual_seed(24)
+    adapter = FeatureAdapter(3, hidden=4)
+    optimizer = torch.optim.Adam(adapter.parameters(), lr=.003, foreach=False)
+    support = sample(1)
+    for _ in range(warmup):
+        optimizer.zero_grad(set_to_none=True)
+        adapter(support['feature'], support['baseline']).square().mean().backward()
+        optimizer.step()
+    optimizer.zero_grad(set_to_none=True)
+    loss = adapter(support['feature'], support['baseline']).square().mean()
+    gradients = torch.autograd.grad(loss, tuple(adapter.parameters()), create_graph=True)
+    virtual = virtual_parameters(adapter, gradients, .003, optimizer)
+    moment_before = {id(p): {k: v.clone() for k, v in optimizer.state.get(p, {}).items()}
+                     for p in adapter.parameters()}
+    assert virtual.keys() == dict(adapter.named_parameters()).keys()
+    for p in adapter.parameters():
+        for key, value in moment_before[id(p)].items():
+            torch.testing.assert_close(optimizer.state[p][key], value, atol=0, rtol=0)
+    for p, g in zip(adapter.parameters(), gradients):
+        p.grad = g.detach()
+    optimizer.step()
+    for name, p in adapter.named_parameters():
+        torch.testing.assert_close(p, virtual[name], atol=1e-7, rtol=1e-5)
+
+
+def test_adam_controller_gradient_with_state_matches_finite_difference():
+    torch.manual_seed(123)
+    adapter = FeatureAdapter(3, hidden=4)
+    controller = SupervisionController(3, grid=2)
+    support, query = sample(2), sample(3)
+    optimizer = torch.optim.Adam(adapter.parameters(), lr=.02, foreach=False)
+    for _ in range(3):
+        optimizer.zero_grad(set_to_none=True)
+        adapter(support['feature'], support['baseline']).square().mean().backward()
+        optimizer.step()
+    objective = meta_objective(adapter, controller, support, query, 2, .02, optimizer=optimizer)
+    parameter = controller.net[-1].bias
+    analytic = torch.autograd.grad(objective, parameter)[0].item()
+    assert abs(analytic) > 1e-8
+    original = parameter.detach().clone()
+    epsilon = .02
+    values = []
+    for delta in (epsilon, -epsilon):
+        with torch.no_grad():
+            parameter.copy_(original+delta)
+        values.append(meta_objective(adapter, controller, support, query, 2, .02,
+                                     optimizer=optimizer).item())
+    with torch.no_grad():
+        parameter.copy_(original)
+    assert (values[0]-values[1])/(2*epsilon) == pytest.approx(analytic, rel=.1, abs=3e-6)
+
+
+def test_fresh_adam_hypergradient_is_finite_at_zero_initialized_layer():
+    adapter = FeatureAdapter(3, hidden=4)
+    controller = SupervisionController(3, grid=2)
+    optimizer = torch.optim.Adam(adapter.parameters(), lr=.001, foreach=False)
+    objective = meta_objective(adapter, controller, sample(1), sample(2), 2, .001,
+                               optimizer=optimizer)
+    gradients = torch.autograd.grad(objective, tuple(controller.parameters()))
+    assert all(torch.isfinite(g).all() for g in gradients)

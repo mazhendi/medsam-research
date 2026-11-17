@@ -55,9 +55,11 @@ def main(argv=None):
     granularity.add_argument("--output", required=True)
     granularity.add_argument("--mode", choices=["pixel", "fixed", "curriculum", "meta", "reweight"],
                              default="meta")
-    granularity.add_argument("--epochs", type=int, default=30)
+    granularity.add_argument("--epochs", type=int, default=50)
     granularity.add_argument("--grid", type=int, default=8)
-    granularity.add_argument("--learning-rate", type=float, default=0.01)
+    granularity.add_argument("--learning-rate", type=float, default=None,
+                             help="Default: Adam 0.001, SGD 0.01")
+    granularity.add_argument("--optimizer", choices=["adam", "sgd"], default="adam")
     granularity.add_argument("--controller-lr", type=float, default=0.001)
     granularity.add_argument("--minimum-pixel-weight", type=float, default=0.1)
     granular_eval = sub.add_parser("evaluate-granularity", help="Evaluate fixed adapter")
@@ -109,7 +111,7 @@ def main(argv=None):
         from .granularity import train_granularity
 
         train_granularity(cfg, args.checkpoint, args.output, args.mode, args.epochs, args.grid,
-                          args.learning_rate, args.controller_lr, args.minimum_pixel_weight)
+                          args.learning_rate, args.controller_lr, args.minimum_pixel_weight, args.optimizer)
     elif args.command == "evaluate-granularity":
         from .granularity import evaluate_granularity
 
