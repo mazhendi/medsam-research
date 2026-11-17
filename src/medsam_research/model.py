@@ -48,6 +48,9 @@ class AutoSAM2(nn.Module):
         return self
 
     def forward(self, images):
+        return self.forward_with_features(images)[0]
+
+    def forward_with_features(self, images):
         if images.ndim != 4 or images.shape[1:] != (3, self.image_size, self.image_size):
             raise ValueError(f"Expected Bx3x{self.image_size}x{self.image_size}")
         x = (images - self.mean) / self.std
@@ -67,9 +70,10 @@ class AutoSAM2(nn.Module):
             repeat_image=False,
             high_res_features=features[:-1] if len(features) > 1 else None,
         )
-        return F.interpolate(
+        logits = F.interpolate(
             masks.float(), size=images.shape[-2:], mode="bilinear", align_corners=False
         )
+        return logits, embed
 
 
 def build_model(cfg, device):

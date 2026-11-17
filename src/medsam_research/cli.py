@@ -40,6 +40,15 @@ def main(argv=None):
             command.add_argument("--blend", type=float, default=0.5)
             command.add_argument("--thin-width", type=float, default=4.0)
             command.add_argument("--medium-width", type=float, default=8.0)
+    correction = sub.add_parser("train-correction", help="Train shared detail/context correction")
+    correction.add_argument("--config", required=True)
+    correction.add_argument("--checkpoint", required=True, help="Existing baseline best.pt")
+    correction.add_argument("--output", required=True)
+    correction.add_argument("--epochs", type=int, default=20)
+    correction.add_argument("--grid", type=int, default=2)
+    correction.add_argument("--head-size", type=int, default=128)
+    correction.add_argument("--learning-rate", type=float, default=0.001)
+    correction.add_argument("--preservation", type=float, default=0.1)
     args = parser.parse_args(argv)
     if args.command == "prepare-retina":
         from .retina import prepare_retina
@@ -66,7 +75,12 @@ def main(argv=None):
     from . import engine
 
     cfg = load_config(args.config)
-    if args.command == "diagnose":
+    if args.command == "train-correction":
+        from .correction import train_correction
+
+        train_correction(cfg, args.checkpoint, args.output, args.epochs, args.grid,
+                         args.head_size, args.learning_rate, args.preservation)
+    elif args.command == "diagnose":
         from .diagnostics import diagnose
 
         diagnose(cfg, args.checkpoint, args.manifest, args.output, args.grid, args.overlap,

@@ -150,3 +150,11 @@ medsam diagnose --config configs/retina_chase.yaml --checkpoint outputs/chase_ob
 ```
 
 输出原图尺寸的漏分/误分图、血管中心线诊断、固定网格重读前后的配对指标和计算成本。详细设置与限制见 [诊断说明](docs/DIAGNOSTICS.md)。固定网格重读属于对照实验，不代表已提出创新方法或已验证精度提升。
+
+### 训练局部纠错分支（研究原型）
+
+```bash
+medsam train-correction --config configs/retina_chase.yaml --checkpoint outputs/chase_observer1_seed42/best.pt --output outputs/chase_correction_v1 --epochs 20
+```
+
+冻结已有基线，训练共享的细节/上下文纠错头，输出验证集整图和逐区域对照；尚无动作选择器。详见 [结构、损失和实验限制](docs/CORRECTION.md)。
