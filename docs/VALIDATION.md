@@ -51,3 +51,7 @@
 ## 重叠裁块文本响应（2026-11-18）
 
 完整测试85项通过，包含真实官方BiomedCLIP CPU裁块前向（28×28响应及相同文本向量）。几何测试验证坐标对齐、边缘覆盖、跨样本隔离、不同窗口批量一致性及非法尺寸拒绝。工作流夹具核对采样配置保存和第二阶段继承。Ruff与git diff --check通过。未运行用户基线的分割训练或4090性能测试，不能据此声称精度提升。
+
+## Simple-ViLMedSAM组件复现（2026-11-18）
+
+作者源码锁定76d95d68fff037182cbdaf37fffb2d30bda2a9ec，算法文件保持原样，兼容修补和所有偏差记录在[SIMPLE_VILMEDSAM_REPRODUCTION.md](SIMPLE_VILMEDSAM_REPRODUCTION.md)。完整测试88项通过，包含LoRA小结构梯度与重载、图像/归因身份和几何检查；Ruff、diff检查及pip check通过。真实BiomedCLIP完成20张CHASE和3张Kvasir归因生成；真实SAM ViT-H在CHASE和Kvasir图前向及原版BID反向更新通过。完整LoRA训练尝试在8GB CPU内存限制下OOM，不能报告训练复现成功。缺少官方文件级划分与trained checkpoint，未复现论文精度，未验证4090完整训练。

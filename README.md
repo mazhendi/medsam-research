@@ -206,3 +206,7 @@ medsam train-text-localizer --config configs/retina_chase.yaml --checkpoint outp
 ![当前文本定位模型](docs/figures/current_text_model.png)
 
 此图对应已完成的global/tiled第一阶段实验，不包含尚未训练的第二阶段修复头。
+
+### Simple-ViLMedSAM作者组件复现
+
+使用锁定作者源码、官方SAM ViT-H、rank=4 LoRA、信息瓶颈归因和原版BID。不是此前的SAM2文本残差头。准备、修补审计、训练/评估命令和严格复现限制见[复现说明](docs/SIMPLE_VILMEDSAM_REPRODUCTION.md)。真实权重组件检查已运行；尚未复现论文精度，完整LoRA训练在本环境8GB CPU内存限制下失败。
