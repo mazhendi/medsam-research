@@ -76,6 +76,21 @@ def main(argv=None):
     probe.add_argument("--samples", type=int, default=2)
     probe.add_argument("--sgd-rates", nargs="+", type=float, default=[0.01, 0.1, 1.0])
     probe.add_argument("--adam-lr", type=float, default=0.001)
+    backbone = sub.add_parser("train-backbone-control", help="Pure supervised backbone controls")
+    backbone.add_argument("--config", required=True)
+    backbone.add_argument("--checkpoint", required=True, help="Original baseline best.pt")
+    backbone.add_argument("--output", required=True)
+    backbone.add_argument("--mode", choices=["decoder", "deep", "pooled", "multiscale"],
+                          default="multiscale")
+    backbone.add_argument("--epochs", type=int, default=50)
+    backbone.add_argument("--learning-rate", type=float, default=None)
+    backbone.add_argument("--width", type=int, default=16)
+    backbone_eval = sub.add_parser("evaluate-backbone-control", help="Evaluate fixed control")
+    backbone_eval.add_argument("--config", required=True)
+    backbone_eval.add_argument("--checkpoint", required=True, help="Original baseline best.pt")
+    backbone_eval.add_argument("--control", required=True, help="best_control.pt")
+    backbone_eval.add_argument("--manifest", required=True)
+    backbone_eval.add_argument("--output", required=True)
     args = parser.parse_args(argv)
     if args.command == "prepare-retina":
         from .retina import prepare_retina
@@ -102,7 +117,16 @@ def main(argv=None):
     from . import engine
 
     cfg = load_config(args.config)
-    if args.command == "probe-adapter":
+    if args.command == "train-backbone-control":
+        from .backbone_controls import train_backbone_control
+
+        train_backbone_control(cfg, args.checkpoint, args.output, args.mode, args.epochs,
+                               args.learning_rate, args.width)
+    elif args.command == "evaluate-backbone-control":
+        from .backbone_controls import evaluate_backbone_control
+
+        evaluate_backbone_control(cfg, args.checkpoint, args.control, args.manifest, args.output)
+    elif args.command == "probe-adapter":
         from .adapter_probe import probe_adapter
 
         probe_adapter(cfg, args.checkpoint, args.output, args.steps, args.samples,

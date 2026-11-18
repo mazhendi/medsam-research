@@ -174,3 +174,14 @@ medsam probe-adapter --config configs/retina_chase.yaml --checkpoint outputs/cha
 ```
 
 比较相同初始化下不同SGD步长与Adam的拟合、梯度、实际参数更新及预测残差。它不会修改正式训练优化器，解释方式见[诊断说明](docs/GRANULARITY.md#先决检查pixel几乎不学习时暂停控制器结论)。
+
+### 当前优先实验：普通解码器继续训练 vs 多尺度残差头
+
+暂停监督控制器，先建立可学习的强对照：
+
+```bash
+medsam train-backbone-control --config configs/retina_chase.yaml --checkpoint outputs/chase_observer1_seed42/best.pt --output outputs/chase_control_decoder --mode decoder --epochs 50
+medsam train-backbone-control --config configs/retina_chase.yaml --checkpoint outputs/chase_observer1_seed42/best.pt --output outputs/chase_control_multiscale --mode multiscale --epochs 50
+```
+
+另有deep和参数量匹配的pooled对照。所有组用纯BCE+Dice，报告原图训练/验证指标；详见[结构、比较边界与评估命令](docs/BACKBONE_CONTROLS.md)。多尺度头是诊断性改进，不代表已经证明创新或提升。
