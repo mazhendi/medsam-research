@@ -185,3 +185,13 @@ medsam train-backbone-control --config configs/retina_chase.yaml --checkpoint ou
 ```
 
 另有deep和参数量匹配的pooled对照。所有组用纯BCE+Dice，报告原图训练/验证指标；详见[结构、比较边界与评估命令](docs/BACKBONE_CONTROLS.md)。多尺度头是诊断性改进，不代表已经证明创新或提升。
+
+### 新增：文本定位与方向性修复（两阶段研究原型）
+
+```bash
+pip install -e ".[dev,text]"
+medsam prepare-biomedclip --output checkpoints/biomedclip
+medsam train-text-localizer --config configs/retina_chase.yaml --checkpoint outputs/chase_observer1_seed42/best.pt --biomedclip-dir checkpoints/biomedclip --prompt "retinal blood vessels" --output outputs/chase_text_localizer --epochs 30
+```
+
+先检查visual/text/text_null与错误互补性，再决定是否训练第二阶段。恢复/抑制头、五组修复消融、固定评估和无标注预测均已实现；详见[安装、完整命令与验证边界](docs/TEXT_VERIFICATION.md)。采用真实官方BiomedCLIP，但不是Simple-ViLMedSAM的IPP/BID复现；尚未验证精度提升或新颖性。

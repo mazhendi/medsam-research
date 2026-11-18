@@ -91,7 +91,40 @@ def main(argv=None):
     backbone_eval.add_argument("--control", required=True, help="best_control.pt")
     backbone_eval.add_argument("--manifest", required=True)
     backbone_eval.add_argument("--output", required=True)
+    bundle = sub.add_parser("prepare-biomedclip", help="Download pinned official text/image weights")
+    bundle.add_argument("--output", required=True)
+    for name in ("train-text-localizer", "train-text-repair"):
+        command = sub.add_parser(name)
+        command.add_argument("--config", required=True)
+        command.add_argument("--checkpoint", required=True, help="Original SAM2 baseline best.pt")
+        command.add_argument("--biomedclip-dir", required=True)
+        command.add_argument("--output", required=True)
+        command.add_argument("--epochs", type=int, default=30)
+        command.add_argument("--learning-rate", type=float, default=0.001)
+        if name == "train-text-localizer":
+            command.add_argument("--prompt", default="retinal blood vessels")
+            command.add_argument("--prompt-map", help="Optional JSON id-to-text mapping")
+            command.add_argument("--width", type=int, default=16)
+        else:
+            command.add_argument("--localizer", required=True)
+            command.add_argument("--repair-mode", choices=["full", "no-intervention", "no-direction", "residual", "balanced-residual"], default="full")
+            command.add_argument("--direction-weight", type=float, default=0.5)
+            command.add_argument("--consistency-weight", type=float, default=0.1)
+    for name in ("evaluate-text-model", "predict-text-model"):
+        command = sub.add_parser(name)
+        command.add_argument("--config", required=True)
+        command.add_argument("--checkpoint", required=True)
+        command.add_argument("--biomedclip-dir", required=True)
+        command.add_argument("--localizer", required=True)
+        command.add_argument("--repair", help="Optional fixed repair checkpoint")
+        command.add_argument("--manifest", required=True)
+        command.add_argument("--output", required=True)
     args = parser.parse_args(argv)
+    if args.command == "prepare-biomedclip":
+        from .text_evidence import prepare_biomedclip
+
+        print(json.dumps(prepare_biomedclip(args.output), indent=2))
+        return
     if args.command == "prepare-retina":
         from .retina import prepare_retina
 
@@ -117,7 +150,27 @@ def main(argv=None):
     from . import engine
 
     cfg = load_config(args.config)
-    if args.command == "train-backbone-control":
+    if args.command == "train-text-localizer":
+        from .text_training import train_text_model
+
+        train_text_model(cfg, args.checkpoint, args.biomedclip_dir, args.output,
+                         prompt=args.prompt, prompt_map=args.prompt_map, epochs=args.epochs,
+                         learning_rate=args.learning_rate, width=args.width)
+    elif args.command == "train-text-repair":
+        from .text_training import train_text_model
+
+        train_text_model(cfg, args.checkpoint, args.biomedclip_dir, args.output, stage="repair",
+                         localizer_path=args.localizer, epochs=args.epochs,
+                         learning_rate=args.learning_rate, repair_mode=args.repair_mode,
+                         direction_weight=args.direction_weight, consistency_weight=args.consistency_weight)
+    elif args.command in ("evaluate-text-model", "predict-text-model"):
+        from . import text_training
+
+        function = (text_training.evaluate_text_model if args.command == "evaluate-text-model"
+                    else text_training.predict_text_model)
+        function(cfg, args.checkpoint, args.biomedclip_dir, args.localizer, args.manifest,
+                 args.output, args.repair)
+    elif args.command == "train-backbone-control":
         from .backbone_controls import train_backbone_control
 
         train_backbone_control(cfg, args.checkpoint, args.output, args.mode, args.epochs,

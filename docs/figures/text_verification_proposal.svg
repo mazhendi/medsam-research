@@ -10,7 +10,7 @@
 <title>G</title>
 <polygon fill="white" stroke="transparent" points="-18,18 -18,-394 1942,-394 1942,18 -18,18"/>
 <text text-anchor="middle" x="962" y="-356" font-family="DejaVu Sans" font-size="20.00">Proposed Text&#45;Guided Localization Verification</text>
-<text text-anchor="middle" x="962" y="-334" font-family="DejaVu Sans" font-size="20.00">DESIGN v0.1 — NOT IMPLEMENTED OR VALIDATED</text>
+<text text-anchor="middle" x="962" y="-334" font-family="DejaVu Sans" font-size="20.00">RESEARCH PROTOTYPE v0.1 — ACCURACY / NOVELTY NOT VALIDATED</text>
 <text text-anchor="middle" x="962" y="-312" font-family="DejaVu Sans" font-size="20.00">Training: paired localization interventions + directional repair supervision</text>
 <g id="clust1" class="cluster">
 <title>cluster_enc</title>

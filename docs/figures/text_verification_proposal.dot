@@ -1,5 +1,5 @@
 digraph G {
- graph [rankdir=LR, bgcolor="white", pad="0.25", nodesep="0.35", ranksep="0.55", fontname="DejaVu Sans", fontsize=20, labelloc=t, label="Proposed Text-Guided Localization Verification\nDESIGN v0.1 — NOT IMPLEMENTED OR VALIDATED\nTraining: paired localization interventions + directional repair supervision"];
+ graph [rankdir=LR, bgcolor="white", pad="0.25", nodesep="0.35", ranksep="0.55", fontname="DejaVu Sans", fontsize=20, labelloc=t, label="Proposed Text-Guided Localization Verification\nRESEARCH PROTOTYPE v0.1 — ACCURACY / NOVELTY NOT VALIDATED\nTraining: paired localization interventions + directional repair supervision"];
  node [shape=box, style="rounded,filled", fontname="DejaVu Sans", fontsize=12, color="#718096", penwidth=1.3, margin="0.15,0.12", fillcolor="white"];
  edge [color="#4a5568", arrowsize=0.7, penwidth=1.25, fontname="DejaVu Sans", fontsize=10];
  image [label="Medical image I\n(retina / endoscopy / X-ray)",fillcolor="#f7fafc"];
