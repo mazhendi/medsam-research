@@ -108,8 +108,10 @@ class FrozenBiomedCLIP(nn.Module):
         device = self.mean.device
         for text in dict.fromkeys(prompts):
             if text not in self._text_cache:
-                tokens = self.tokenizer(text, padding='max_length', truncation=True,
+                tokens = self.tokenizer(text, padding='max_length', truncation=False,
                                         max_length=self.context_length, return_tensors='pt')['input_ids']
+                if tokens.shape[-1] > self.context_length:
+                    raise ValueError(f'Prompt exceeds BiomedCLIP context ({self.context_length} tokens); shorten the description explicitly')
                 self._text_cache[text] = self.model.encode_text(tokens.to(device), normalize=True)
         return torch.cat([self._text_cache[t] for t in prompts])
 
@@ -146,7 +148,10 @@ def read_prompt_map(path):
     return value
 
 
-def resolve_prompts(ids, default, mapping):
+def resolve_prompts(ids, default, mapping, strict=False):
     if not isinstance(default, str) or not default.strip():
         raise ValueError('A nonempty default task prompt is required')
+    missing = [sid for sid in ids if sid not in mapping]
+    if strict and missing:
+        raise ValueError(f'Missing per-image prompts: {missing[:5]}')
     return [mapping.get(sid, default) for sid in ids]

@@ -31,17 +31,17 @@ medsam prepare-biomedclip --output checkpoints/biomedclip
 
 ## 2. 第一阶段：文本定位与互补性测量
 
-建议先用`--epochs 1`在新输出目录做本机运行检查，然后正式运行：
+先按[逐图描述说明](IMAGE_CAPTIONS.md)生成并检查prompts.json。建议先用`--epochs 1`在新输出目录做本机运行检查，然后正式运行：
 
 ```bash
-medsam train-text-localizer --config configs/retina_chase.yaml --checkpoint outputs/chase_observer1_seed42/best.pt --biomedclip-dir checkpoints/biomedclip --prompt "retinal blood vessels" --output outputs/chase_text_localizer --epochs 30
+medsam train-text-localizer --config configs/retina_chase.yaml --checkpoint outputs/chase_observer1_seed42/best.pt --biomedclip-dir checkpoints/biomedclip --prompt "retinal blood vessels" --prompt-map outputs/chase_image_prompts/prompts.json --output outputs/chase_text_localizer --epochs 30
 ```
 
 - 仅训练文本定位头；基线和BiomedCLIP不更新。
 - 全部监督来自原训练掩码，BCE+Dice，AdamW lr=1e-3，weight_decay沿用配置；head宽度默认16，可用--width修改。
 - 为避免冻结特征精度和分支差异造成难以定位的问题，当前训练使用FP32，不启用配置中的AMP。batch_size/worker/seed沿用原配置。4090实际显存峰值需要用户本机确认，不能从CPU检查推断。
 - 每个epoch报告原图网格训练/验证指标，所有模式保持原阈值和边界容差。包含visual、text、text_null。
-- 同一个默认任务文本用于所有图。若已有由原图生成的逐图描述，可通过--prompt-map传入JSON `{ "Image_04L": "..." }`；未列出的ID使用默认文本。映射嵌入checkpoint并用于第二阶段和预测，不需要另外保留原路径。不能使用测试掩码或测试错误图生成提示。
+- `--prompt-map`传入逐图JSON `{ "Image_04L": "..." }`，必须覆盖训练和验证ID，缺失时报错；训练文本全部相同时拒绝逐图实验。统一任务词对照需明确指定`--task-only`。映射及来源记录嵌入checkpoint并用于第二阶段和预测；新图需要另传覆盖新ID的`--prompt-map`。不能使用测试掩码或测试错误图生成提示。
 
 `complementarity.csv`按图记录：文本预测的FN/FP、视觉分支能正确覆盖/排除的比例，以及清空文本条件后的概率L1差和掩码差异。只有一个类别、全部文本相同时打乱文字不会改变实验，不是有效消融。
 

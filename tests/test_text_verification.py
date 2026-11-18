@@ -115,7 +115,7 @@ def test_training_stages_evaluation_and_label_free_inference(tmp_path, monkeypat
     checkpoint = engine.train(cfg)/'best.pt'
     original = checkpoint.read_bytes()
     local_out, repair_out = tmp_path/'local', tmp_path/'repair'
-    train_text_model(cfg, checkpoint, 'fixture', local_out, epochs=2, width=4)
+    train_text_model(cfg, checkpoint, 'fixture', local_out, epochs=2, width=4, task_only=True)
     initial = json.loads((local_out/'initial_validation.json').read_text())
     assert initial['visual'] == initial['text'] == initial['text_null']
     local_path = local_out/'last_localizer.pt'
@@ -215,3 +215,49 @@ def test_direction_loss_is_explicitly_equivalent_to_domain_balanced_final_bce():
     expected = (errors*(~domain)).sum()/(~domain).sum().clamp_min(1)
     expected = expected+(errors*domain).sum()/domain.sum().clamp_min(1)
     torch.testing.assert_close(direction_loss(result, target, valid), expected)
+
+
+def test_per_image_training_requires_coverage_and_carries_prompt_policy(tmp_path, monkeypatch):
+    from medsam_research.data import file_hash
+
+    train = make_manifest(tmp_path, 'train.csv', ['aa', 'bb'])
+    val = make_manifest(tmp_path, 'val.csv', ['cc'])
+    source = tmp_path/'source.pt'
+    source.write_bytes(b'test source')
+    cfg = Config(ModelConfig(checkpoint=str(source)), DataConfig(str(train), str(val)),
+                 TrainingConfig(epochs=1, batch_size=1, num_workers=0, device='cpu', amp=False,
+                                output_dir=str(tmp_path/'baseline')))
+    monkeypatch.setattr(engine, 'build_model', lambda cfg, device: PyramidTiny().to(device))
+    monkeypatch.setattr(text_training, 'FrozenBiomedCLIP', FixtureEvidence)
+    checkpoint = engine.train(cfg)/'best.pt'
+    with pytest.raises(ValueError, match='prompt-map'):
+        train_text_model(cfg, checkpoint, 'fixture', tmp_path/'no_map', epochs=1)
+    path = tmp_path/'captions.json'
+    path.write_text(json.dumps({'aa': 'dark image'}))
+    with pytest.raises(ValueError, match='Missing per-image'):
+        train_text_model(cfg, checkpoint, 'fixture', tmp_path/'missing', prompt_map=path, epochs=1)
+    path.write_text(json.dumps(dict.fromkeys(['aa', 'bb', 'cc'], 'same caption')))
+    with pytest.raises(ValueError, match='identical'):
+        train_text_model(cfg, checkpoint, 'fixture', tmp_path/'same', prompt_map=path, epochs=1)
+    path.write_text(json.dumps({'aa': 'dark image', 'bb': 'bright image', 'cc': 'low contrast image'}))
+    receipt = {'format_version': 1, 'task': 'retinal blood vessels',
+               'image_sha256': {sid: file_hash(tmp_path/f'{sid}.png') for sid in ['aa', 'bb', 'cc']}}
+    (tmp_path/'captions.metadata.json').write_text(json.dumps(receipt))
+    out = tmp_path/'per_image'
+    train_text_model(cfg, checkpoint, 'fixture', out, prompt_map=path, epochs=1, width=4)
+    artifact = out/'last_localizer.pt'
+    saved = torch.load(artifact, weights_only=True)
+    assert saved['provenance']['prompt_policy'] == 'per-image'
+    assert saved['provenance']['prompt_audit']['train']['image_hashes_checked'] == 2
+    with (out/'images.csv').open() as stream:
+        assert list(csv.DictReader(stream))[0]['prompt'] == 'low contrast image'
+    inference = tmp_path/'inference.csv'
+    inference.write_text('id,image,mask\nnew,cc.png,missing.png\n')
+    with pytest.raises(ValueError, match='Missing per-image'):
+        predict_text_model(cfg, checkpoint, 'fixture', artifact, inference, tmp_path/'bad_predict')
+    override = tmp_path/'new_prompts.json'
+    override.write_text(json.dumps({'new': 'new image descriptor'}))
+    result = predict_text_model(cfg, checkpoint, 'fixture', artifact, inference,
+                                tmp_path/'new_prediction', prompt_map=override)
+    with (result/'predictions.csv').open() as stream:
+        assert list(csv.DictReader(stream))[0]['prompt'] == 'new image descriptor'

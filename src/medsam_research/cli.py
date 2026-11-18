@@ -103,7 +103,10 @@ def main(argv=None):
         command.add_argument("--learning-rate", type=float, default=0.001)
         if name == "train-text-localizer":
             command.add_argument("--prompt", default="retinal blood vessels")
-            command.add_argument("--prompt-map", help="Optional JSON id-to-text mapping")
+            source = command.add_mutually_exclusive_group(required=True)
+            source.add_argument("--prompt-map", help="Complete per-image JSON id-to-text mapping")
+            source.add_argument("--task-only", action="store_true", help="Explicit uniform-text control")
+            command.add_argument("--prompt-pairing", choices=["matched", "shuffle"], default="matched")
             command.add_argument("--width", type=int, default=16)
         else:
             command.add_argument("--localizer", required=True)
@@ -117,9 +120,27 @@ def main(argv=None):
         command.add_argument("--biomedclip-dir", required=True)
         command.add_argument("--localizer", required=True)
         command.add_argument("--repair", help="Optional fixed repair checkpoint")
+        command.add_argument("--prompt-map", help="Per-image captions for new evaluation/inference images")
         command.add_argument("--manifest", required=True)
         command.add_argument("--output", required=True)
+    captions = sub.add_parser("generate-image-prompts", help="Local VLM descriptions from original images only")
+    captions.add_argument("--manifests", nargs="+", required=True)
+    captions.add_argument("--output", required=True)
+    captions.add_argument("--task", required=True)
+    captions.add_argument("--model-id", default="Qwen/Qwen2.5-VL-3B-Instruct")
+    captions.add_argument("--revision")
+    captions.add_argument("--device", default="cuda")
+    captions.add_argument("--cache-dir", default="checkpoints/caption-models")
+    captions.add_argument("--max-new-tokens", type=int, default=256)
+    captions.add_argument("--resume", action="store_true")
     args = parser.parse_args(argv)
+    if args.command == "generate-image-prompts":
+        from .image_captions import generate_image_prompts
+
+        print(json.dumps(generate_image_prompts(args.manifests, args.output, args.task,
+                         args.model_id, args.revision, args.device, args.cache_dir,
+                         args.max_new_tokens, args.resume), indent=2))
+        return
     if args.command == "prepare-biomedclip":
         from .text_evidence import prepare_biomedclip
 
@@ -155,7 +176,8 @@ def main(argv=None):
 
         train_text_model(cfg, args.checkpoint, args.biomedclip_dir, args.output,
                          prompt=args.prompt, prompt_map=args.prompt_map, epochs=args.epochs,
-                         learning_rate=args.learning_rate, width=args.width)
+                         learning_rate=args.learning_rate, width=args.width, task_only=args.task_only,
+                         prompt_pairing=args.prompt_pairing)
     elif args.command == "train-text-repair":
         from .text_training import train_text_model
 
@@ -169,7 +191,7 @@ def main(argv=None):
         function = (text_training.evaluate_text_model if args.command == "evaluate-text-model"
                     else text_training.predict_text_model)
         function(cfg, args.checkpoint, args.biomedclip_dir, args.localizer, args.manifest,
-                 args.output, args.repair)
+                 args.output, args.repair, args.prompt_map)
     elif args.command == "train-backbone-control":
         from .backbone_controls import train_backbone_control
 

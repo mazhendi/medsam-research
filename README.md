@@ -189,9 +189,12 @@ medsam train-backbone-control --config configs/retina_chase.yaml --checkpoint ou
 ### 新增：文本定位与方向性修复（两阶段研究原型）
 
 ```bash
-pip install -e ".[dev,text]"
+pip install -e ".[dev,text,captions]"
 medsam prepare-biomedclip --output checkpoints/biomedclip
-medsam train-text-localizer --config configs/retina_chase.yaml --checkpoint outputs/chase_observer1_seed42/best.pt --biomedclip-dir checkpoints/biomedclip --prompt "retinal blood vessels" --output outputs/chase_text_localizer --epochs 30
+medsam generate-image-prompts --manifests data/retina/CHASE_DB1/train.csv data/retina/CHASE_DB1/val.csv --task "retinal blood vessels" --output outputs/chase_image_prompts
+medsam train-text-localizer --config configs/retina_chase.yaml --checkpoint outputs/chase_observer1_seed42/best.pt --biomedclip-dir checkpoints/biomedclip --prompt "retinal blood vessels" --prompt-map outputs/chase_image_prompts/prompts.json --output outputs/chase_text_localizer --epochs 30
 ```
 
 先检查visual/text/text_null与错误互补性，再决定是否训练第二阶段。恢复/抑制头、五组修复消融、固定评估和无标注预测均已实现；详见[安装、完整命令与验证边界](docs/TEXT_VERIFICATION.md)。采用真实官方BiomedCLIP，但不是Simple-ViLMedSAM的IPP/BID复现；尚未验证精度提升或新颖性。
+
+逐图描述生成、人工检查、图文错配对照及新图预测见[逐图文本说明](docs/IMAGE_CAPTIONS.md)。现在训练必须明确选择`--prompt-map`或统一文本对照`--task-only`，不会缺失时静默补同一句话。

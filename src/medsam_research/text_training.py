@@ -16,6 +16,7 @@ from torch.nn import functional as F
 from .data import audit_manifests, file_hash, image_tensor, load_pair, read_manifest
 from .diagnostics import error_overlay, vessel_metrics
 from .engine import _restore, git_revision, make_loader, set_seed, write_csv, write_json
+from .image_captions import audit_image_prompts, caption_metadata, pair_image_prompts
 from .metrics import binary_metrics, native_prediction, segmentation_loss
 from .text_evidence import FrozenBiomedCLIP, read_prompt_map, resolve_prompts
 from .text_verification import (
@@ -72,13 +73,13 @@ def _save_probability(path, array):
 
 
 @torch.no_grad()
-def score_system(system, loader, records, cfg, device, prompt, mapping, output=None):
+def score_system(system, loader, records, cfg, device, prompt, mapping, output=None, strict_prompts=False):
     system.eval()
     rows, complements, repairs, images = [], [], [], []
     record_map = {r.sample_id: r for r in records}
     counter = 0
     for batch in loader:
-        prompts = resolve_prompts(batch['id'], prompt, mapping)
+        prompts = resolve_prompts(batch['id'], prompt, mapping, strict=strict_prompts)
         result = system(batch['image'].to(device), prompts, null_text=True)
         modes = [name for name in ('visual', 'text', 'text_null', 'repaired') if name in result]
         for i, sid in enumerate(batch['id']):
@@ -214,9 +215,24 @@ def build_system(cfg, checkpoint, biomedclip_dir, localizer_path=None, repair_pa
     return system, device, local, repair
 
 
+
+def split_prompt_policy(records, provenance, override_path=None):
+    mapping = read_prompt_map(override_path) if override_path else provenance['prompt_map']
+    receipt = caption_metadata(override_path) if override_path else provenance.get('prompt_metadata')
+    strict = override_path is not None or provenance.get('prompt_policy') == 'per-image'
+    audit = audit_image_prompts(records, provenance['prompt'], mapping, receipt, strict)
+    pairing = provenance.get('prompt_pairing', 'matched')
+    paired = pair_image_prompts(records, mapping, pairing, provenance['config']['training']['seed'])
+    audit['pairing'] = pairing
+    audit['effective_text_change_fraction'] = sum(paired.get(r.sample_id, provenance['prompt'])
+        != mapping.get(r.sample_id, provenance['prompt']) for r in records)/len(records)
+    return paired, audit, strict
+
+
 def train_text_model(cfg, checkpoint, biomedclip_dir, output, stage='localizer', localizer_path=None,
                      prompt='retinal blood vessels', prompt_map=None, epochs=30, learning_rate=.001,
-                     width=16, repair_mode='full', direction_weight=.5, consistency_weight=.1):
+                     width=16, repair_mode='full', direction_weight=.5, consistency_weight=.1,
+                     task_only=False, prompt_pairing='matched'):
     if stage not in ('localizer', 'repair') or epochs < 1 or width < 1:
         raise ValueError('Invalid stage, epochs or width')
     if repair_mode not in REPAIR_MODES:
@@ -230,27 +246,41 @@ def train_text_model(cfg, checkpoint, biomedclip_dir, output, stage='localizer',
     if out.exists():
         raise FileExistsError(out)
     set_seed(cfg.training.seed)
+    train_records, val_records = (read_manifest(p) for p in
+                                 (cfg.data.train_manifest, cfg.data.val_manifest))
+    if stage == 'localizer':
+        if (prompt_map is None) == (not task_only):
+            raise ValueError('Provide --prompt-map for per-image captions, or explicitly --task-only for a control')
+        if prompt_pairing not in ('matched', 'shuffle') or (task_only and prompt_pairing != 'matched'):
+            raise ValueError('Shuffled control requires a complete per-image prompt map')
+        mapping = read_prompt_map(prompt_map)
+        receipt = caption_metadata(prompt_map)
+        routing = {'prompt': prompt, 'prompt_map': mapping, 'prompt_metadata': receipt,
+                   'prompt_policy': 'task-only' if task_only else 'per-image',
+                   'prompt_pairing': prompt_pairing, 'config': cfg.to_dict()}
+    else:
+        routing = _load_artifact(localizer_path, 'text_localizer')['provenance']
+        prompt, mapping = routing['prompt'], routing['prompt_map']
+        receipt = routing.get('prompt_metadata')
+    train_mapping, train_prompt_audit, strict_prompts = split_prompt_policy(train_records, routing)
+    val_mapping, val_prompt_audit, _ = split_prompt_policy(val_records, routing)
+    if strict_prompts and len(train_records) > 1 and train_prompt_audit['unique_texts'] < 2:
+        raise ValueError('All training descriptions are identical; this is a task-only control, not per-image evidence')
     audit = audit_manifests([cfg.data.train_manifest, cfg.data.val_manifest], cfg.data.mask_threshold)
     system, device, local, _ = build_system(cfg, checkpoint, biomedclip_dir, localizer_path,
                                           width=width)
     if stage == 'repair':
         if local['epoch'] == 0:
             print('Diagnostic: localizer selected epoch 0 (identity); repair alone cannot establish text benefit.', flush=True)
-        prompt = local['provenance']['prompt']
-        mapping = local['provenance']['prompt_map']
         width = local['provenance']['width']
         system.localizer.requires_grad_(False)
         channels = local['provenance']['channels']
         system.repair = DirectionalRepair(channels, width, cfg.training.threshold, repair_mode).to(device)
     else:
-        mapping = read_prompt_map(prompt_map)
-        resolve_prompts(['validate'], prompt, mapping)
         channels = [layer.in_channels for layer in system.localizer.projections]
     head = system.localizer if stage == 'localizer' else system.repair
     optimizer = torch.optim.AdamW(head.parameters(), lr=learning_rate,
                                   weight_decay=cfg.training.weight_decay)
-    train_records, val_records = (read_manifest(p) for p in
-                                 (cfg.data.train_manifest, cfg.data.val_manifest))
     train_loader = make_loader(train_records, system.image_size, cfg, True)
     fit_loader = make_loader(train_records, system.image_size, cfg)
     val_loader = make_loader(val_records, system.image_size, cfg)
@@ -264,6 +294,12 @@ def train_text_model(cfg, checkpoint, biomedclip_dir, output, stage='localizer',
     provenance = {'project_commit': git_revision(), 'stage': stage, 'versions': versions,
                   'baseline_sha256': file_hash(checkpoint), 'biomedclip': system.evidence.identity,
                   'config': cfg.to_dict(), 'data_audit': audit, 'prompt': prompt, 'prompt_map': mapping,
+                  'prompt_policy': routing.get('prompt_policy', 'legacy-default-fallback'),
+                  'prompt_pairing': routing.get('prompt_pairing', 'matched'), 'prompt_metadata': receipt,
+                  'prompt_audit': {'train': train_prompt_audit, 'validation': val_prompt_audit},
+                  'prompt_map_sha256': file_hash(prompt_map) if prompt_map else None,
+                  'prompt_map_changed_since_generation': (receipt.get('prompt_map_sha256') != file_hash(prompt_map))
+                      if receipt is not None and prompt_map is not None else None,
                   'channels': channels, 'width': width, 'repair_mode': repair_mode if stage == 'repair' else None,
                   'localizer_sha256': file_hash(localizer_path) if localizer_path else None,
                   'epochs': epochs, 'learning_rate': learning_rate, 'training_precision': 'FP32',
@@ -276,7 +312,7 @@ def train_text_model(cfg, checkpoint, biomedclip_dir, output, stage='localizer',
     out.mkdir(parents=True)
     write_json(out/'provenance.json', provenance)
     mode = 'text' if stage == 'localizer' else 'repaired'
-    initial = score_system(system, val_loader, val_records, cfg, device, prompt, mapping)
+    initial = score_system(system, val_loader, val_records, cfg, device, prompt, val_mapping, strict_prompts=strict_prompts)
     write_json(out/'initial_validation.json', initial)
     best = initial[mode]['dice']
     kind = 'text_localizer' if stage == 'localizer' else 'text_repair'
@@ -291,7 +327,7 @@ def train_text_model(cfg, checkpoint, biomedclip_dir, output, stage='localizer',
         system.train()
         losses, norms = [], []
         for batch in train_loader:
-            texts = resolve_prompts(batch['id'], prompt, mapping)
+            texts = resolve_prompts(batch['id'], prompt, train_mapping, strict=strict_prompts)
             optimizer.zero_grad(set_to_none=True)
             result = system(batch['image'].to(device), texts, apply_repair=False)
             y, valid = batch['mask'].to(device), batch['valid'].to(device)
@@ -308,8 +344,8 @@ def train_text_model(cfg, checkpoint, biomedclip_dir, output, stage='localizer',
             norms.append(norm.item())
             optimizer.step()
             losses.append((loss.item(), len(y)))
-        training = score_system(system, fit_loader, train_records, cfg, device, prompt, mapping)
-        validation = score_system(system, val_loader, val_records, cfg, device, prompt, mapping)
+        training = score_system(system, fit_loader, train_records, cfg, device, prompt, train_mapping, strict_prompts=strict_prompts)
+        validation = score_system(system, val_loader, val_records, cfg, device, prompt, val_mapping, strict_prompts=strict_prompts)
         record = {'epoch': epoch, 'train_loss': sum(value*n for value, n in losses)/sum(n for _, n in losses),
                   'training': training, 'validation': validation,
                   'gradient_norm_before_clip': float(np.mean(norms))}
@@ -324,7 +360,7 @@ def train_text_model(cfg, checkpoint, biomedclip_dir, output, stage='localizer',
     head.load_state_dict(saved['state'])
     if saved['epoch'] == 0:
         print('Diagnostic: validation selected identity initialization; no improvement established.', flush=True)
-    scores = score_system(system, val_loader, val_records, cfg, device, prompt, mapping, out)
+    scores = score_system(system, val_loader, val_records, cfg, device, prompt, val_mapping, out, strict_prompts)
     timing = {'wall_seconds': time.perf_counter()-started}
     if device.type == 'cuda':
         timing['peak_allocated_bytes'] = torch.cuda.max_memory_allocated(device)
@@ -335,7 +371,7 @@ def train_text_model(cfg, checkpoint, biomedclip_dir, output, stage='localizer',
 
 
 def evaluate_text_model(cfg, checkpoint, biomedclip_dir, localizer_path, manifest, output,
-                        repair_path=None):
+                        repair_path=None, prompt_map=None):
     out = Path(output)
     if out.exists():
         raise FileExistsError(out)
@@ -348,10 +384,12 @@ def evaluate_text_model(cfg, checkpoint, biomedclip_dir, localizer_path, manifes
     records = read_manifest(manifest)
     loader = make_loader(records, system.image_size, cfg)
     provenance = local['provenance']
+    mapping, prompt_audit, strict_prompts = split_prompt_policy(records, provenance, prompt_map)
     out.mkdir(parents=True)
     scores = score_system(system, loader, records, cfg, device, provenance['prompt'],
-                          provenance['prompt_map'], out)
-    write_json(out/'summary.json', {'modes': scores, 'data_audit': audit,
+                          mapping, out, strict_prompts)
+    write_json(out/'summary.json', {'modes': scores, 'data_audit': audit, 'prompt_audit': prompt_audit,
+                                   'prompt_map_override_sha256': file_hash(prompt_map) if prompt_map else None,
                                    'localizer_sha256': file_hash(localizer_path),
                                    'repair_sha256': file_hash(repair_path) if repair else None,
                                    'note': 'Fixed weights; no updates or interventions.'})
@@ -360,7 +398,7 @@ def evaluate_text_model(cfg, checkpoint, biomedclip_dir, localizer_path, manifes
 
 @torch.no_grad()
 def predict_text_model(cfg, checkpoint, biomedclip_dir, localizer_path, manifest, output,
-                       repair_path=None):
+                       repair_path=None, prompt_map=None):
     records = read_manifest(manifest, require_masks=False)
     out = Path(output)
     if out.exists():
@@ -369,11 +407,12 @@ def predict_text_model(cfg, checkpoint, biomedclip_dir, localizer_path, manifest
                                                 repair_path)
     system.eval()
     provenance = local['provenance']
+    mapping, prompt_audit, strict_prompts = split_prompt_policy(records, provenance, prompt_map)
     out.mkdir(parents=True)
     rows = []
     for index, record in enumerate(records):
         image, _ = load_pair(replace(record, mask=None))  # never reads mask/FOV columns
-        texts = resolve_prompts([record.sample_id], provenance['prompt'], provenance['prompt_map'])
+        texts = resolve_prompts([record.sample_id], provenance['prompt'], mapping, strict=strict_prompts)
         result = system(image_tensor(image, system.image_size)[None].to(device), texts)
         mode = 'repaired' if repair else 'text'
         mask = native_prediction(result[mode], (image.height, image.width), cfg.training.threshold)
@@ -383,6 +422,8 @@ def predict_text_model(cfg, checkpoint, biomedclip_dir, localizer_path, manifest
                      'prediction': filename})
     write_csv(out/'predictions.csv', rows)
     write_json(out/'provenance.json', {'manifest_sha256': file_hash(manifest),
+                                     'prompt_audit': prompt_audit,
+                                     'prompt_map_override_sha256': file_hash(prompt_map) if prompt_map else None,
                                      'localizer_sha256': file_hash(localizer_path),
                                      'repair_sha256': file_hash(repair_path) if repair else None,
                                      'baseline_sha256': file_hash(checkpoint),
