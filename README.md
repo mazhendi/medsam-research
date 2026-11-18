@@ -9,7 +9,7 @@
 - 这是可运行的**基线**，不将其本身声称为新方法。已用于视网膜实验，当前也用于息肉分割；不同任务的权重和输出需独立保存。
 - 第一版为单任务训练；输入为 8-bit RGB/灰度图像，目标为单通道二值掩码。DICOM、16-bit X-ray、多类别标签需先明确转换规则。
 - 使用官方默认 1024×1024 输入，直接方形缩放；采用 ImageNet 均值/标准差归一化。标签最近邻缩放；评估先将 logits 恢复到原图尺寸，再以固定阈值二值化。
-- 当前无随机训练增强；后续公平对照需单独增加并固定增强策略，不能将此初始配置称为最优基线。
+- 训练增强通过 `training.augmentation: light` 启用（水平/垂直翻转、90° 倍数旋转、亮度/对比度 ±10%；仅训练集，图像、掩码与 FOV 同步变换）；默认 `none`。所有对照必须记录并固定增强策略，不能将此配置称为最优基线。
 
 ## 1. 安装（Linux / RTX 4090）
 
@@ -145,6 +145,25 @@ medsam train --config configs/polyp.yaml
 ```
 
 先准备显式训练/验证清单；掩码格式、患者/视频划分及外部测试要求见[息肉数据与运行说明](docs/POLYP.md)。
+
+### 全量训练池、增强与 HSNet 口径指标
+
+`tools/` 提供与 `docs/POLYP.md` 配套的实验工具，均只读写显式路径，不自动下载或改划分：
+
+```bash
+# PraNet/HSNet 风格 1450 对训练图：复制、掩码 >=128 二值化、ID 哈希 90/10 划分
+python tools/prepare_polyp.py --limit 0 --val-fraction 0.1 --output data/polyp_full
+# 五个标准测试集：转换并生成去重清单（<dataset>_dedup.csv）
+python tools/prepare_polyp_test.py
+```
+
+- `configs/polyp_full.yaml`：1305 train / 145 val，无增强
+- `configs/polyp_full_aug.yaml`：同一数据与超参，`augmentation: light`
+- `tools/predict_probs.py`：输出原图分辨率概率图（HSNet 指标的必要输入）
+- `tools/eval_hsnet_metrics.py`：调用 HSNet 作者的 `eval_functions.py` 计算 Dice/IoU/Sm/Em/加权 F（256 阈值）
+- `tools/eval_hd95.py`：0.5 阈值边界对称距离的 95 分位
+
+这些脚本不读取测试标签用于模型选择；测试集去重与测试集使用范围需在报告中说明。
 
 ## 基线诊断
 

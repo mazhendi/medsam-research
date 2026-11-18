@@ -2,6 +2,7 @@
 
 import csv
 import hashlib
+import random
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -109,10 +110,36 @@ def load_fov(record, shape):
 
 
 class BinaryDataset(Dataset):
-    def __init__(self, records, image_size, mask_threshold=0):
+    def __init__(self, records, image_size, mask_threshold=0, augmentation="none"):
+        if augmentation not in ("none", "light"):
+            raise ValueError("augmentation must be 'none' or 'light'")
         self.records = records
         self.image_size = image_size
         self.mask_threshold = mask_threshold
+        self.augmentation = augmentation
+
+    def _augment(self, image, mask, valid):
+        """Geometric transforms apply to image, mask and FOV together; photometric image-only."""
+        from PIL import ImageEnhance
+
+        if random.random() < 0.5:
+            image = image.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
+            mask = mask[:, ::-1].copy()
+            valid = valid[:, ::-1].copy()
+        if random.random() < 0.5:
+            image = image.transpose(Image.Transpose.FLIP_TOP_BOTTOM)
+            mask = mask[::-1, :].copy()
+            valid = valid[::-1, :].copy()
+        turns = random.choice((0, 0, 1, 2, 3))
+        if turns:
+            image = image.transpose({1: Image.Transpose.ROTATE_90,
+                                     2: Image.Transpose.ROTATE_180,
+                                     3: Image.Transpose.ROTATE_270}[turns])
+            mask = np.rot90(mask, turns).copy()
+            valid = np.rot90(valid, turns).copy()
+        image = ImageEnhance.Brightness(image).enhance(random.uniform(0.9, 1.1))
+        image = ImageEnhance.Contrast(image).enhance(random.uniform(0.9, 1.1))
+        return image, mask, valid
 
     def __len__(self):
         return len(self.records)
@@ -122,10 +149,14 @@ class BinaryDataset(Dataset):
         image, mask = load_pair(record, self.mask_threshold)
         if mask is None:
             raise ValueError("Training/evaluation requires masks")
+        if self.augmentation == "light":
+            valid = load_fov(record, mask.shape)
+            image, mask, valid = self._augment(image, mask, valid)
+        else:
+            valid = load_fov(record, mask.shape)
         small = Image.fromarray(mask).resize(
             (self.image_size, self.image_size), Image.Resampling.NEAREST
         )
-        valid = load_fov(record, mask.shape)
         small_valid = Image.fromarray(valid).resize(
             (self.image_size, self.image_size), Image.Resampling.NEAREST
         )

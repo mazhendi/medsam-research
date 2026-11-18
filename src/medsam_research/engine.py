@@ -51,9 +51,10 @@ def resolve_device(value):
     return device
 
 
-def make_loader(records, image_size, cfg, shuffle=False):
+def make_loader(records, image_size, cfg, shuffle=False, augment=False):
     return DataLoader(
-        BinaryDataset(records, image_size, cfg.data.mask_threshold),
+        BinaryDataset(records, image_size, cfg.data.mask_threshold,
+                      augmentation="light" if augment else "none"),
         batch_size=cfg.training.batch_size,
         shuffle=shuffle,
         num_workers=cfg.training.num_workers,
@@ -128,7 +129,8 @@ def train(cfg):
         [cfg.data.train_manifest, cfg.data.val_manifest], cfg.data.mask_threshold
     )
     model = build_model(cfg.model, device)
-    train_loader = make_loader(read_manifest(cfg.data.train_manifest), model.image_size, cfg, True)
+    train_loader = make_loader(read_manifest(cfg.data.train_manifest), model.image_size, cfg,
+                               True, augment=t.augmentation == "light")
     val_loader = make_loader(read_manifest(cfg.data.val_manifest), model.image_size, cfg)
     out = Path(t.output_dir)
     # Never silently reuse a previous experiment directory.
@@ -153,6 +155,7 @@ def train(cfg):
         "trainable_parameters": sum(p.numel() for p in model.parameters() if p.requires_grad),
         "evaluation_grid": "original_image",
         "boundary_tolerance_pixels": t.boundary_tolerance,
+        "augmentation": t.augmentation,
         "threshold": t.threshold,
     }
     if device.type == "cuda":
@@ -165,7 +168,13 @@ def train(cfg):
         weight_decay=t.weight_decay,
     )
     use_amp = bool(t.amp and device.type == "cuda")
-    scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
+    # fp16 overflows in the mask decoder on some GPUs; bf16 needs no loss scaling.
+    amp_dtype = (
+        torch.bfloat16
+        if use_amp and torch.cuda.is_bf16_supported()
+        else torch.float16
+    )
+    scaler = torch.amp.GradScaler("cuda", enabled=use_amp and amp_dtype == torch.float16)
     best, started = -1.0, time.perf_counter()
     for epoch in range(1, t.epochs + 1):
         model.train()
@@ -173,7 +182,7 @@ def train(cfg):
         for batch in train_loader:
             images, targets = batch["image"].to(device), batch["mask"].to(device)
             optimizer.zero_grad(set_to_none=True)
-            with torch.autocast(device_type=device.type, dtype=torch.float16, enabled=use_amp):
+            with torch.autocast(device_type=device.type, dtype=amp_dtype, enabled=use_amp):
                 logits = model(images)
                 loss = segmentation_loss(logits, targets, batch["valid"].to(device))
             if not torch.isfinite(loss):
