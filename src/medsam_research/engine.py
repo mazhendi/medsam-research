@@ -54,7 +54,7 @@ def resolve_device(value):
 def make_loader(records, image_size, cfg, shuffle=False, augment=False):
     return DataLoader(
         BinaryDataset(records, image_size, cfg.data.mask_threshold,
-                      augmentation="light" if augment else "none"),
+                      augmentation=cfg.training.augmentation if augment else "none"),
         batch_size=cfg.training.batch_size,
         shuffle=shuffle,
         num_workers=cfg.training.num_workers,
@@ -130,7 +130,7 @@ def train(cfg):
     )
     model = build_model(cfg.model, device)
     train_loader = make_loader(read_manifest(cfg.data.train_manifest), model.image_size, cfg,
-                               True, augment=t.augmentation == "light")
+                               True, augment=t.augmentation != "none")
     val_loader = make_loader(read_manifest(cfg.data.val_manifest), model.image_size, cfg)
     out = Path(t.output_dir)
     # Never silently reuse a previous experiment directory.
@@ -158,6 +158,17 @@ def train(cfg):
         "augmentation": t.augmentation,
         "threshold": t.threshold,
     }
+    if t.augmentation == "hsnet":
+        provenance["augmentation_protocol"] = {
+            "reference": "https://github.com/baiboat/HSNet",
+            "commit": "9d3986a8ada19314bdf6884fed3690ddc0b987ec",
+            "branch": "utils/dataloader.py enabled augmentation branch",
+            "rotation_degrees": [-90, 90], "rotation_interpolation": "nearest",
+            "vertical_flip_probability": .5, "horizontal_flip_probability": .5,
+            "photometric_jitter": False, "multiscale_training": False,
+            "mask_resize": "nearest (project binary-label policy)",
+            "input_size": model.image_size,
+        }
     if device.type == "cuda":
         provenance["gpu"] = torch.cuda.get_device_name(device)
         torch.cuda.reset_peak_memory_stats(device)

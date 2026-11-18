@@ -1,0 +1,23 @@
+# HSNet enabled geometric-augmentation branch; SAM2 remains single-scale 1024.
+# Full HSNet/PraNet-style polyp training pool (1450 pairs, 90/10 hash split).
+model:
+  sam_config: configs/sam2.1/sam2.1_hiera_s.yaml
+  checkpoint: ../checkpoints/sam2.1_hiera_small.pt
+  prompt_tokens: 4
+data:
+  train_manifest: ../data/polyp_full/train.csv
+  val_manifest: ../data/polyp_full/val.csv
+  mask_threshold: 0
+training:
+  seed: 42
+  epochs: 30
+  batch_size: 1
+  learning_rate: 0.0001
+  weight_decay: 0.01
+  num_workers: 2
+  amp: true
+  device: cuda
+  threshold: 0.5
+  boundary_tolerance: 2
+  output_dir: ../outputs/polyp_baseline_full_hsnet_seed42
+  augmentation: hsnet

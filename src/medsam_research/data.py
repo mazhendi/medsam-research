@@ -111,8 +111,8 @@ def load_fov(record, shape):
 
 class BinaryDataset(Dataset):
     def __init__(self, records, image_size, mask_threshold=0, augmentation="none"):
-        if augmentation not in ("none", "light"):
-            raise ValueError("augmentation must be 'none' or 'light'")
+        if augmentation not in ("none", "light", "hsnet"):
+            raise ValueError("augmentation must be 'none', 'light' or 'hsnet'")
         self.records = records
         self.image_size = image_size
         self.mask_threshold = mask_threshold
@@ -141,6 +141,27 @@ class BinaryDataset(Dataset):
         image = ImageEnhance.Contrast(image).enhance(random.uniform(0.9, 1.1))
         return image, mask, valid
 
+    def _augment_hsnet(self, image, mask, valid, valid_fill=0):
+        """Enabled HSNet geometry branch: rotate, vertical flip, horizontal flip.
+
+        Legacy RandomRotation(resample=False) uses nearest interpolation. Resize
+        remains this project's binary-mask nearest policy and SAM2 input size.
+        No photometric jitter and no RNG reseeding inside sample retrieval.
+        """
+        angle = random.uniform(-90.0, 90.0)
+        image = image.rotate(angle, resample=Image.Resampling.NEAREST, expand=False, fillcolor=0)
+        mask = Image.fromarray(mask).rotate(angle, resample=Image.Resampling.NEAREST,
+                                           expand=False, fillcolor=0)
+        valid = Image.fromarray(valid).rotate(angle, resample=Image.Resampling.NEAREST,
+                                             expand=False, fillcolor=valid_fill)
+        if random.random() < .5:
+            image, mask, valid = (item.transpose(Image.Transpose.FLIP_TOP_BOTTOM)
+                                  for item in (image, mask, valid))
+        if random.random() < .5:
+            image, mask, valid = (item.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
+                                  for item in (image, mask, valid))
+        return image, np.array(mask, copy=True), np.array(valid, copy=True)
+
     def __len__(self):
         return len(self.records)
 
@@ -149,11 +170,12 @@ class BinaryDataset(Dataset):
         image, mask = load_pair(record, self.mask_threshold)
         if mask is None:
             raise ValueError("Training/evaluation requires masks")
+        valid = load_fov(record, mask.shape)
         if self.augmentation == "light":
-            valid = load_fov(record, mask.shape)
             image, mask, valid = self._augment(image, mask, valid)
-        else:
-            valid = load_fov(record, mask.shape)
+        elif self.augmentation == "hsnet":
+            image, mask, valid = self._augment_hsnet(
+                image, mask, valid, valid_fill=0 if record.fov is not None else 1)
         small = Image.fromarray(mask).resize(
             (self.image_size, self.image_size), Image.Resampling.NEAREST
         )

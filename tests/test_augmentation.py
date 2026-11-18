@@ -74,3 +74,60 @@ def test_config_accepts_and_rejects_augmentation(tmp_path):
     with pytest.raises(ValueError):
         load_config(path)
     assert records  # keep fixture usage explicit
+
+
+@pytest.mark.parametrize('angle', [0., 31., -47., 90.])
+@pytest.mark.parametrize('flips', [(.1, .1), (.1, .9), (.9, .1), (.9, .9)])
+def test_hsnet_shared_geometry_and_no_color_jitter(tmp_path, monkeypatch, angle, flips):
+    records = make_record(tmp_path)
+    dataset = BinaryDataset(records, 64, augmentation='hsnet')
+    # Identical pixel landmarks in image/mask/FOV must stay identical after the
+    # continuous-angle rotation and both flips, including rectangular images.
+    landmarks = np.zeros((17, 29), dtype=np.uint8)
+    landmarks[2:8, 3:10] = 1
+    landmarks[12:15, 21:26] = 1
+    rgb = Image.fromarray(np.repeat((landmarks*255)[:, :, None], 3, axis=2))
+    monkeypatch.setattr(random, 'uniform', lambda a, b: angle)
+    draws = iter(flips)
+    monkeypatch.setattr(random, 'random', lambda: next(draws))
+    image, mask, valid = dataset._augment_hsnet(rgb, landmarks, landmarks)
+    np.testing.assert_array_equal(np.asarray(image)[:, :, 0], mask*255)
+    np.testing.assert_array_equal(mask, valid)
+    assert mask.shape == landmarks.shape
+    assert set(np.unique(image)) <= {0, 255}  # No brightness/contrast changes.
+
+
+def test_hsnet_loader_train_only_and_corner_policy(tmp_path, monkeypatch):
+    from medsam_research.config import Config, DataConfig, ModelConfig, TrainingConfig
+    from medsam_research.engine import make_loader
+
+    records = make_record(tmp_path)
+    cfg = Config(ModelConfig(), DataConfig(), TrainingConfig(
+        augmentation='hsnet', num_workers=0, device='cpu', batch_size=1))
+    train = make_loader(records, 32, cfg, augment=True)
+    val = make_loader(records, 32, cfg)
+    assert train.dataset.augmentation == 'hsnet'
+    assert val.dataset.augmentation == 'none'
+    monkeypatch.setattr(random, 'uniform', lambda a, b: 45.)
+    monkeypatch.setattr(random, 'random', lambda: 1.)
+    # Without an explicit FOV, fill corners remain supervised background.
+    sample = train.dataset[0]
+    assert sample['native_valid'].all()
+    # With an explicit FOV, pixels rotated out of the source stay invalid.
+    fov = tmp_path/'fov.png'
+    Image.fromarray(np.full((24, 32), 255, dtype=np.uint8)).save(fov)
+    from dataclasses import replace
+    with_fov = BinaryDataset([replace(records[0], fov=fov)], 32, augmentation='hsnet')[0]
+    assert with_fov['native_valid'][0, 0] == 0
+    assert set(with_fov['mask'].unique().tolist()) <= {0., 1.}
+
+
+def test_hsnet_config_is_independent_from_legacy_light():
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    current = load_config(root/'configs/polyp_full_hsnet.yaml')
+    previous = load_config(root/'configs/polyp_full_aug.yaml')
+    assert current.training.augmentation == 'hsnet'
+    assert previous.training.augmentation == 'light'
+    assert current.training.output_dir != previous.training.output_dir

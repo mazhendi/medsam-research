@@ -27,3 +27,7 @@ medsam predict --config configs/polyp.yaml --checkpoint outputs/polyp_baseline_s
 ```
 
 输出目录已存在时拒绝覆盖。保留原视网膜配置和权重，息肉另建输出目录。旧基线检查点格式保持不变；加载还需原始官方Small权重。默认50轮是起步配置，不是已经证实的最优轮数。报告Dice、IoU、Boundary F1、前景比例、逐图结果及计算成本。息肉不应把血管宽度/中心线指标作为主指标。
+
+## 数据增强
+
+当前参照HSNet启用分支的几何增强，使用`configs/polyp_full_hsnet.yaml`。角度、概率、与原论文输入/标签/多尺度设置的差异见[增强说明](POLYP_AUGMENTATION.md)。原light配置保留用于历史对照，不能把两者混为同一次实验。

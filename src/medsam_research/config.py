@@ -86,6 +86,6 @@ def load_config(path):
         raise ValueError("threshold must be in (0,1); boundary_tolerance must be >= 0")
     if not 0 <= cfg.data.mask_threshold <= 255:
         raise ValueError("mask_threshold must be in [0,255]")
-    if t.augmentation not in ("none", "light"):
-        raise ValueError("augmentation must be 'none' or 'light'")
+    if t.augmentation not in ("none", "light", "hsnet"):
+        raise ValueError("augmentation must be 'none', 'light' or 'hsnet'")
     return cfg

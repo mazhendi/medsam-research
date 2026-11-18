@@ -9,7 +9,7 @@
 - 这是可运行的**基线**，不将其本身声称为新方法。已用于视网膜实验，当前也用于息肉分割；不同任务的权重和输出需独立保存。
 - 第一版为单任务训练；输入为 8-bit RGB/灰度图像，目标为单通道二值掩码。DICOM、16-bit X-ray、多类别标签需先明确转换规则。
 - 使用官方默认 1024×1024 输入，直接方形缩放；采用 ImageNet 均值/标准差归一化。标签最近邻缩放；评估先将 logits 恢复到原图尺寸，再以固定阈值二值化。
-- 训练增强通过 `training.augmentation: light` 启用（水平/垂直翻转、90° 倍数旋转、亮度/对比度 ±10%；仅训练集，图像、掩码与 FOV 同步变换）；默认 `none`。所有对照必须记录并固定增强策略，不能将此配置称为最优基线。
+- 增强模式默认`none`；息肉推荐`hsnet`（连续±90°旋转、上下/左右翻转，无颜色扰动）。原`light`保留作历史对照。只在训练集增强，图像/标签/FOV同步几何变换；详细依据见[增强说明](docs/POLYP_AUGMENTATION.md)。
 
 ## 1. 安装（Linux / RTX 4090）
 
@@ -95,7 +95,7 @@ medsam audit data/train.csv data/val.csv data/test.csv
 medsam train --config configs/baseline.yaml
 ```
 
-4090 起步批量大小为 1，启用 FP16 混合精度；实际显存与速度需在你的机器测量。只训练任务 token 和掩码解码器，不生成真实标注点/框，也不做多掩码真值选择。所有数据仍通过冻结的图像编码器。
+4090 起步批量大小为 1，启用混合精度（支持时BF16，否则FP16）；实际显存与速度需在你的机器测量。只训练任务 token 和掩码解码器，不生成真实标注点/框，也不做多掩码真值选择。所有数据仍通过冻结的图像编码器。
 
 输出到 `outputs/baseline_seed42/`：
 
@@ -158,7 +158,8 @@ python tools/prepare_polyp_test.py
 ```
 
 - `configs/polyp_full.yaml`：1305 train / 145 val，无增强
-- `configs/polyp_full_aug.yaml`：同一数据与超参，`augmentation: light`
+- `configs/polyp_full_aug.yaml`：原light对照，保留历史设置
+- `configs/polyp_full_hsnet.yaml`：按HSNet启用分支设置连续±90°旋转＋上下/左右翻转，无颜色扰动；详见[增强依据与差异](docs/POLYP_AUGMENTATION.md)
 - `tools/predict_probs.py`：输出原图分辨率概率图（HSNet 指标的必要输入）
 - `tools/eval_hsnet_metrics.py`：调用 HSNet 作者的 `eval_functions.py` 计算 Dice/IoU/Sm/Em/加权 F（256 阈值）
 - `tools/eval_hd95.py`：0.5 阈值边界对称距离的 95 分位
