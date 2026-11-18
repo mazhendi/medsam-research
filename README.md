@@ -5,8 +5,8 @@
 ## 当前实现与边界
 
 - 已实现：可学习任务 token、冻结图像编码器、训练掩码解码器；CSV 数据配对、数据检查、训练、原始分辨率评估、无标签推理、检查点与运行记录。
-- **尚未实现**：局部高分辨率重读、LoRA、无标签测试时适配、动作收益预测器、视频记忆、多任务联合训练、断点续训。
-- 这是可运行的**基线**，不是已验证的创新模型。尚无真实医学数据实验结果。
+- 当前维护单任务基线；不包含文本分支、外部论文复现或实验性适配模块。视频记忆、多任务联合训练、断点续训未实现。
+- 这是可运行的**基线**，不将其本身声称为新方法。已用于视网膜实验，当前也用于息肉分割；不同任务的权重和输出需独立保存。
 - 第一版为单任务训练；输入为 8-bit RGB/灰度图像，目标为单通道二值掩码。DICOM、16-bit X-ray、多类别标签需先明确转换规则。
 - 使用官方默认 1024×1024 输入，直接方形缩放；采用 ImageNet 均值/标准差归一化。标签最近邻缩放；评估先将 logits 恢复到原图尺寸，再以固定阈值二值化。
 - 当前无随机训练增强；后续公平对照需单独增加并固定增强策略，不能将此初始配置称为最优基线。
@@ -120,7 +120,7 @@ medsam predict --config configs/baseline.yaml \
 
 推理清单只需要 `id,image` 两列。输出 PNG 保留原始尺寸，通过 `predictions.csv` 对应样本 ID，文件名不使用原始 ID，避免路径字符导致写出目录。
 
-评估输出逐图 Dice、IoU、boundary F1，以及前景面积比例。boundary F1 使用原图网格上的欧氏距离容差，默认 2 **像素**，不是毫米。Dice/IoU 为逐图宏平均；两张空掩码记 1，只有一张为空记 0。另报告阳性样本 Dice 和空目标图像的假阳性率，避免阴性比例掩盖结果。尚未提供 clDice、HD95 或目标级漏检分析。
+评估输出逐图 Dice、IoU、boundary F1，以及前景面积比例。boundary F1 使用原图网格上的欧氏距离容差，默认 2 **像素**，不是毫米。Dice/IoU 为逐图宏平均；两张空掩码记 1，只有一张为空记 0。另报告阳性样本 Dice 和空目标图像的假阳性率，避免阴性比例掩盖结果。常规evaluate不包含clDice、HD95或目标级漏检分析；血管clDice与中心线指标由diagnose提供。
 
 独立评估会同时审计源训练、验证与测试清单，因此需保留源数据。评估阈值、标签阈值和边界容差必须与训练记录一致，不允许根据测试集修改。推理不需要源数据或目标标注。
 
@@ -136,77 +136,20 @@ pytest -q -m integration
 
 GitHub Actions 执行 CPU 静态检查和普通测试。真实 4090、默认 1024 输入、医学数据性能仍需实测。
 
-## 后续研究顺序
+## 息肉分割
 
-先跑通单任务真实基线，再独立加入原图局部重读、LoRA，验证不同动作收益是否互补。只有现象成立，才训练收益预测器。无标签适配目标尚未确定，受监督微调不得冒充测试时适配。
-
-### 下一步：验证集错误诊断与局部重读对照
-
-已有训练权重可直接运行，无需重新训练：
+沿用同一个SAM 2.1基线，从官方预训练权重开始训练。使用独立的`configs/polyp.yaml`和`outputs/polyp_baseline_seed42/`，不覆盖视网膜的`outputs/chase_observer1_seed42/best.pt`。
 
 ```bash
-pip install -e ".[dev]"
-medsam diagnose --config configs/retina_chase.yaml --checkpoint outputs/chase_observer1_seed42/best.pt --manifest data/retina/CHASE_DB1/val.csv --output outputs/chase_diagnose_grid2
+medsam train --config configs/polyp.yaml
 ```
 
-输出原图尺寸的漏分/误分图、血管中心线诊断、固定网格重读前后的配对指标和计算成本。详细设置与限制见 [诊断说明](docs/DIAGNOSTICS.md)。固定网格重读属于对照实验，不代表已提出创新方法或已验证精度提升。
+先准备显式训练/验证清单；掩码格式、患者/视频划分及外部测试要求见[息肉数据与运行说明](docs/POLYP.md)。
 
-### 训练局部纠错分支（研究原型）
+## 基线诊断
 
-```bash
-medsam train-correction --config configs/retina_chase.yaml --checkpoint outputs/chase_observer1_seed42/best.pt --output outputs/chase_correction_v1 --epochs 20
-```
+`medsam diagnose`提供已有基线的验证集错误图、血管指标和固定局部重读对照，不训练额外分支，详见[诊断说明](docs/DIAGNOSTICS.md)。
 
-冻结已有基线，训练共享的细节/上下文纠错头，输出验证集整图和逐区域对照；尚无动作选择器。详见 [结构、损失和实验限制](docs/CORRECTION.md)。
+## 仓库维护范围
 
-### 区域监督精度控制器（独立研究原型）
-
-```bash
-medsam train-granularity --config configs/retina_chase.yaml --checkpoint outputs/chase_observer1_seed42/best.pt --output outputs/chase_granularity_meta --mode meta --optimizer adam --learning-rate 0.001 --epochs 50
-```
-
-冻结原基线，新增轻量分割适配头，以训练集内部不同受试者的元目标学习区域占比/像素BCE的混合权重。支持pixel、fixed、curriculum、meta、reweight五组对照；独立验证集不更新控制器，推理不需要控制器。先阅读[实验步骤与限制](docs/GRANULARITY.md)，与pixel对照一起运行；本模块尚无已验证的创新或性能结论。
-
-如果 `pixel` 对照的训练损失和预测几乎不变，先暂停控制器对照，运行训练集小样本拟合诊断：
-
-```bash
-medsam probe-adapter --config configs/retina_chase.yaml --checkpoint outputs/chase_observer1_seed42/best.pt --output outputs/chase_adapter_probe --steps 100 --samples 2
-```
-
-比较相同初始化下不同SGD步长与Adam的拟合、梯度、实际参数更新及预测残差。它不会修改正式训练优化器，解释方式见[诊断说明](docs/GRANULARITY.md#先决检查pixel几乎不学习时暂停控制器结论)。
-
-### 当前优先实验：普通解码器继续训练 vs 多尺度残差头
-
-暂停监督控制器，先建立可学习的强对照：
-
-```bash
-medsam train-backbone-control --config configs/retina_chase.yaml --checkpoint outputs/chase_observer1_seed42/best.pt --output outputs/chase_control_decoder --mode decoder --epochs 50
-medsam train-backbone-control --config configs/retina_chase.yaml --checkpoint outputs/chase_observer1_seed42/best.pt --output outputs/chase_control_multiscale --mode multiscale --epochs 50
-```
-
-另有deep和参数量匹配的pooled对照。所有组用纯BCE+Dice，报告原图训练/验证指标；详见[结构、比较边界与评估命令](docs/BACKBONE_CONTROLS.md)。多尺度头是诊断性改进，不代表已经证明创新或提升。
-
-### 新增：文本定位与方向性修复（两阶段研究原型）
-
-```bash
-pip install -e ".[dev,text,captions]"
-medsam prepare-biomedclip --output checkpoints/biomedclip
-medsam generate-image-prompts --manifests data/retina/CHASE_DB1/train.csv data/retina/CHASE_DB1/val.csv --task "retinal blood vessels" --output outputs/chase_image_prompts
-medsam train-text-localizer --config configs/retina_chase.yaml --checkpoint outputs/chase_observer1_seed42/best.pt --biomedclip-dir checkpoints/biomedclip --prompt "retinal blood vessels" --prompt-map outputs/chase_image_prompts/prompts.json --output outputs/chase_text_localizer --epochs 30
-```
-
-先检查visual/text/text_null与错误互补性，再决定是否训练第二阶段。恢复/抑制头、五组修复消融、固定评估和无标注预测均已实现；详见[安装、完整命令与验证边界](docs/TEXT_VERIFICATION.md)。采用真实官方BiomedCLIP，但不是Simple-ViLMedSAM的IPP/BID复现；尚未验证精度提升或新颖性。
-
-逐图描述生成、人工检查、图文错配对照及新图预测见[逐图文本说明](docs/IMAGE_CAPTIONS.md)。现在训练必须明确选择`--prompt-map`或统一文本对照`--task-only`，不会缺失时静默补同一句话。
-
-高分辨率重叠裁块响应已加入：`--evidence-mode tiled --tile-grid 2`，详见[实验命令、采样结构与成本](docs/TILED_EVIDENCE.md)。
-
-### 当前实际训练结构图
-
-![当前文本定位模型](docs/figures/current_text_model.png)
-
-此图对应已完成的global/tiled第一阶段实验，不包含尚未训练的第二阶段修复头。
-
-### Simple-ViLMedSAM作者组件复现
-
-使用锁定作者源码、官方SAM ViT-H、rank=4 LoRA、信息瓶颈归因和原版BID。不是此前的SAM2文本残差头。准备、修补审计、训练/评估命令和严格复现限制见[复现说明](docs/SIMPLE_VILMEDSAM_REPRODUCTION.md)。真实权重组件检查已运行；尚未复现论文精度，完整LoRA训练在本环境8GB CPU内存限制下失败。
+当前main只维护我们自己的SAM 2.1基线、数据工具、诊断与测试。已移除外部论文复现、文本/VLM分支、纠错头、区域监督和额外适配实验。历史代码仍可从Git历史找回。`data/`、`checkpoints/`、`outputs/`不随本次清理删除，也不提交训练权重。已有基线best.pt/last.pt的模型结构和加载格式保持不变。
