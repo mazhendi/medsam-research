@@ -198,3 +198,5 @@ medsam train-text-localizer --config configs/retina_chase.yaml --checkpoint outp
 先检查visual/text/text_null与错误互补性，再决定是否训练第二阶段。恢复/抑制头、五组修复消融、固定评估和无标注预测均已实现；详见[安装、完整命令与验证边界](docs/TEXT_VERIFICATION.md)。采用真实官方BiomedCLIP，但不是Simple-ViLMedSAM的IPP/BID复现；尚未验证精度提升或新颖性。
 
 逐图描述生成、人工检查、图文错配对照及新图预测见[逐图文本说明](docs/IMAGE_CAPTIONS.md)。现在训练必须明确选择`--prompt-map`或统一文本对照`--task-only`，不会缺失时静默补同一句话。
+
+高分辨率重叠裁块响应已加入：`--evidence-mode tiled --tile-grid 2`，详见[实验命令、采样结构与成本](docs/TILED_EVIDENCE.md)。

@@ -116,9 +116,7 @@ class FrozenBiomedCLIP(nn.Module):
         return torch.cat([self._text_cache[t] for t in prompts])
 
     @torch.no_grad()
-    def forward(self, images, prompts):
-        if len(images) != len(prompts):
-            raise ValueError('One prompt per image is required')
+    def _global_response(self, images, text):
         x = F.interpolate(images.float(), (self.image_size, self.image_size), mode='bilinear',
                           align_corners=False, antialias=True)
         x = (x-self.mean)/self.std
@@ -133,9 +131,56 @@ class FrozenBiomedCLIP(nn.Module):
         # Reuse pretrained norm/projection, never an untrained random text-image bridge.
         patches = trunk.fc_norm(patches)
         patches = F.normalize(self.model.visual.head(patches).float(), dim=-1)
-        text = self.encode_texts(prompts).float()
         similarity = torch.einsum('bnd,bd->bn', patches, text)
-        return similarity.reshape(len(images), 1, side, side), text
+        return similarity.reshape(len(images), 1, side, side)
+
+    @torch.no_grad()
+    def forward(self, images, prompts):
+        if len(images) != len(prompts):
+            raise ValueError('One prompt per image is required')
+        text = self.encode_texts(prompts).float()
+        if getattr(self, 'sampling_mode', 'global') == 'global':
+            return self._global_response(images, text), text
+        response = tiled_response(images, text, self._global_response,
+                                  self.tile_grid, self.tile_batch_size)
+        return response, text
+
+
+def tiled_response(images, text, encode, grid=2, batch_size=1):
+    """Half-tile overlap, patch-center alignment and positive cosine blending.
+
+    Each crop still uses the pretrained 224 input / 14 patch lattice. No global
+    response is mixed in: compare the sampling change without a new fusion head.
+    """
+    if grid not in (2, 4) or batch_size < 1:
+        raise ValueError('tile grid must be 2 or 4; tile batch size must be positive')
+    height, width = images.shape[-2:]
+    if height % (2*grid) or width % (2*grid):
+        raise ValueError('Input dimensions must be divisible by twice the tile grid')
+    tile_h, tile_w = height//grid, width//grid
+    output = weight = window = None
+    jobs = [(b, y, x) for b in range(len(images))
+            for y in range(2*grid-1) for x in range(2*grid-1)]
+    for start in range(0, len(jobs), batch_size):
+        chunk = jobs[start:start+batch_size]
+        crops = torch.stack([images[b, :, y*tile_h//2:y*tile_h//2+tile_h,
+                                    x*tile_w//2:x*tile_w//2+tile_w] for b, y, x in chunk])
+        responses = encode(crops, torch.stack([text[b] for b, _, _ in chunk]))
+        side = responses.shape[-1]
+        if responses.shape[1:] != (1, side, side) or side % 2:
+            raise ValueError('Expected even square patch response')
+        if output is None:
+            output = responses.new_zeros(len(images), 1, side*grid, side*grid)
+            weight = torch.zeros_like(output)
+            taper = torch.hann_window(side, periodic=False, device=responses.device,
+                                      dtype=responses.dtype).clamp_min(.05)
+            window = taper[:, None]*taper[None, :]
+        for response, (b, y, x) in zip(responses, chunk):
+            ys, xs = y*side//2, x*side//2
+            output[b, :, ys:ys+side, xs:xs+side] += response*window
+            weight[b, :, ys:ys+side, xs:xs+side] += window
+    return output/weight
+
 
 
 def read_prompt_map(path):

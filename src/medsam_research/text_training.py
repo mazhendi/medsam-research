@@ -179,6 +179,11 @@ def _check_binding(saved, cfg, checkpoint, evidence):
         raise ValueError('Text model was trained against a different baseline')
     if provenance['biomedclip'] != evidence.identity:
         raise ValueError('BiomedCLIP identity differs from training')
+    sampling = provenance.get('evidence_sampling', {'mode': 'global'})
+    current = evidence.sampling
+    if sampling['mode'] != current['mode'] or (sampling['mode'] == 'tiled'
+            and sampling['tile_grid'] != current['tile_grid']):
+        raise ValueError('Evidence sampling differs from training')
     previous = provenance['config']
     if (previous['model']['sam_config'] != cfg.model.sam_config
             or previous['model']['prompt_tokens'] != cfg.model.prompt_tokens
@@ -188,11 +193,20 @@ def _check_binding(saved, cfg, checkpoint, evidence):
         raise ValueError('Text evaluation settings differ from training')
 
 
-def build_system(cfg, checkpoint, biomedclip_dir, localizer_path=None, repair_path=None, width=16):
+def build_system(cfg, checkpoint, biomedclip_dir, localizer_path=None, repair_path=None, width=16,
+                 evidence_mode='global', tile_grid=2, tile_batch_size=1):
     baseline, device = _restore(cfg, checkpoint)
     evidence = FrozenBiomedCLIP(biomedclip_dir, device)
     local = _load_artifact(localizer_path, 'text_localizer') if localizer_path else None
     repair = _load_artifact(repair_path, 'text_repair') if repair_path else None
+    sampling = local['provenance'].get('evidence_sampling', {'mode': 'global'}) if local else {
+        'mode': evidence_mode, 'tile_grid': tile_grid, 'tile_batch_size': tile_batch_size}
+    evidence.sampling_mode = sampling['mode']
+    evidence.tile_grid = sampling.get('tile_grid', 2)
+    evidence.tile_batch_size = sampling.get('tile_batch_size', 1)
+    sampling = dict(sampling)
+    sampling['image_crops_per_sample'] = (2*evidence.tile_grid-1)**2 if evidence.sampling_mode == 'tiled' else 1
+    evidence.sampling = sampling
     if repair is not None and local is None:
         raise ValueError('A localizer checkpoint is required for repair')
     if local:
@@ -232,7 +246,10 @@ def split_prompt_policy(records, provenance, override_path=None):
 def train_text_model(cfg, checkpoint, biomedclip_dir, output, stage='localizer', localizer_path=None,
                      prompt='retinal blood vessels', prompt_map=None, epochs=30, learning_rate=.001,
                      width=16, repair_mode='full', direction_weight=.5, consistency_weight=.1,
-                     task_only=False, prompt_pairing='matched'):
+                     task_only=False, prompt_pairing='matched', evidence_mode='global',
+                     tile_grid=2, tile_batch_size=1):
+    if evidence_mode not in ('global', 'tiled') or tile_grid not in (2, 4) or tile_batch_size < 1:
+        raise ValueError('Invalid evidence sampling settings')
     if stage not in ('localizer', 'repair') or epochs < 1 or width < 1:
         raise ValueError('Invalid stage, epochs or width')
     if repair_mode not in REPAIR_MODES:
@@ -268,7 +285,8 @@ def train_text_model(cfg, checkpoint, biomedclip_dir, output, stage='localizer',
         raise ValueError('All training descriptions are identical; this is a task-only control, not per-image evidence')
     audit = audit_manifests([cfg.data.train_manifest, cfg.data.val_manifest], cfg.data.mask_threshold)
     system, device, local, _ = build_system(cfg, checkpoint, biomedclip_dir, localizer_path,
-                                          width=width)
+                                          width=width, evidence_mode=evidence_mode,
+                                          tile_grid=tile_grid, tile_batch_size=tile_batch_size)
     if stage == 'repair':
         if local['epoch'] == 0:
             print('Diagnostic: localizer selected epoch 0 (identity); repair alone cannot establish text benefit.', flush=True)
@@ -293,6 +311,7 @@ def train_text_model(cfg, checkpoint, biomedclip_dir, output, stage='localizer',
             versions[name] = 'not installed (fixture only)'
     provenance = {'project_commit': git_revision(), 'stage': stage, 'versions': versions,
                   'baseline_sha256': file_hash(checkpoint), 'biomedclip': system.evidence.identity,
+                  'evidence_sampling': system.evidence.sampling,
                   'config': cfg.to_dict(), 'data_audit': audit, 'prompt': prompt, 'prompt_map': mapping,
                   'prompt_policy': routing.get('prompt_policy', 'legacy-default-fallback'),
                   'prompt_pairing': routing.get('prompt_pairing', 'matched'), 'prompt_metadata': receipt,

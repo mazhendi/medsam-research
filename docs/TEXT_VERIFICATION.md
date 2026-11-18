@@ -125,3 +125,7 @@ predict仅读取id/image及原图，不读取manifest的mask/FOV列；即使它�
 - 未验证用户4090上的显存、速度和实际增益；未完成跨数据集、近邻方法复现或论文新颖性证明。
 
 第一轮建议先报告第一阶段的summary/history/complementarity与代表性语义响应图，再决定第二阶段投入，避免再次在缺少有效先验信号时扩大消融。
+
+## 高分辨率采样对照
+
+新增冻结BiomedCLIP重叠裁块模式，保持SAM和定位头不变。参见[TILED_EVIDENCE.md](TILED_EVIDENCE.md)，先运行1轮，再做正确描述与统一任务词对照。

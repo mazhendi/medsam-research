@@ -108,6 +108,9 @@ def main(argv=None):
             source.add_argument("--task-only", action="store_true", help="Explicit uniform-text control")
             command.add_argument("--prompt-pairing", choices=["matched", "shuffle"], default="matched")
             command.add_argument("--width", type=int, default=16)
+            command.add_argument("--evidence-mode", choices=["global", "tiled"], default="global")
+            command.add_argument("--tile-grid", type=int, choices=[2, 4], default=2)
+            command.add_argument("--tile-batch-size", type=int, default=1)
         else:
             command.add_argument("--localizer", required=True)
             command.add_argument("--repair-mode", choices=["full", "no-intervention", "no-direction", "residual", "balanced-residual"], default="full")
@@ -177,7 +180,8 @@ def main(argv=None):
         train_text_model(cfg, args.checkpoint, args.biomedclip_dir, args.output,
                          prompt=args.prompt, prompt_map=args.prompt_map, epochs=args.epochs,
                          learning_rate=args.learning_rate, width=args.width, task_only=args.task_only,
-                         prompt_pairing=args.prompt_pairing)
+                         prompt_pairing=args.prompt_pairing, evidence_mode=args.evidence_mode,
+                         tile_grid=args.tile_grid, tile_batch_size=args.tile_batch_size)
     elif args.command == "train-text-repair":
         from .text_training import train_text_model
 

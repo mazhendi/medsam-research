@@ -115,13 +115,15 @@ def test_training_stages_evaluation_and_label_free_inference(tmp_path, monkeypat
     checkpoint = engine.train(cfg)/'best.pt'
     original = checkpoint.read_bytes()
     local_out, repair_out = tmp_path/'local', tmp_path/'repair'
-    train_text_model(cfg, checkpoint, 'fixture', local_out, epochs=2, width=4, task_only=True)
+    train_text_model(cfg, checkpoint, 'fixture', local_out, epochs=2, width=4, task_only=True,
+                     evidence_mode='tiled', tile_grid=2, tile_batch_size=3)
     initial = json.loads((local_out/'initial_validation.json').read_text())
     assert initial['visual'] == initial['text'] == initial['text_null']
     local_path = local_out/'last_localizer.pt'
     local_original = local_path.read_bytes()
     train_text_model(cfg, checkpoint, 'fixture', repair_out, stage='repair',
                      localizer_path=local_path, epochs=2)
+    assert torch.load(repair_out/'last_repair.pt', weights_only=True)['provenance']['evidence_sampling']['mode'] == 'tiled'
     initial = json.loads((repair_out/'initial_validation.json').read_text())
     assert initial['text'] == initial['repaired']
     assert checkpoint.read_bytes() == original and local_path.read_bytes() == local_original
