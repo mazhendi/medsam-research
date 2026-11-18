@@ -200,3 +200,9 @@ medsam train-text-localizer --config configs/retina_chase.yaml --checkpoint outp
 逐图描述生成、人工检查、图文错配对照及新图预测见[逐图文本说明](docs/IMAGE_CAPTIONS.md)。现在训练必须明确选择`--prompt-map`或统一文本对照`--task-only`，不会缺失时静默补同一句话。
 
 高分辨率重叠裁块响应已加入：`--evidence-mode tiled --tile-grid 2`，详见[实验命令、采样结构与成本](docs/TILED_EVIDENCE.md)。
+
+### 当前实际训练结构图
+
+![当前文本定位模型](docs/figures/current_text_model.png)
+
+此图对应已完成的global/tiled第一阶段实验，不包含尚未训练的第二阶段修复头。
