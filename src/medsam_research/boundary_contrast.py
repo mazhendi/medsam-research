@@ -4,6 +4,7 @@ Research prototype: no accuracy or novelty claim. All geometry is predicted;
 labels are used only by boundary_contrast_loss. SAM2 stays frozen.
 """
 
+from copy import deepcopy
 from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 
@@ -25,6 +26,8 @@ class BoundaryContrastConfig:
     affinity_strength: float = 4.0
     coarse_weight: float = 0.2
     mode: str = "full"
+    architecture: str = "baseline_adapter"
+    train_decoder: bool = False
 
     def validate(self):
         import math
@@ -39,6 +42,12 @@ class BoundaryContrastConfig:
                 raise ValueError(f"Invalid {key}")
         if self.mode not in MODES:
             raise ValueError("Unknown boundary-contrast mode")
+        if self.architecture not in ("baseline_adapter", "custom_decoder"):
+            raise ValueError("Unknown decoder architecture")
+        if type(self.train_decoder) is not bool:
+            raise ValueError("train_decoder must be boolean")
+        if self.architecture == "custom_decoder" and self.train_decoder:
+            raise ValueError("Legacy custom decoder cannot fine-tune the SAM decoder")
         return self
 
     def to_dict(self):
@@ -211,12 +220,18 @@ class BoundaryContrastHead(nn.Module):
         self.coarse = nn.Conv2d(w, 1, 1)
         self.boundary = InnerOuterBoundary(c)
         self.fusions = nn.ModuleList(BoundaryCrossScale(c) for _ in range(len(channels) - 1))
-        self.decoder = nn.Sequential(
-            nn.Conv2d(w * len(channels), w, 3, padding=1),
-            nn.GroupNorm(1, w),
-            nn.GELU(),
-            nn.Conv2d(w, 1, 1),
-        )
+        if c.architecture == "custom_decoder":
+            self.decoder = nn.Sequential(
+                nn.Conv2d(w * len(channels), w, 3, padding=1),
+                nn.GroupNorm(1, w),
+                nn.GELU(),
+                nn.Conv2d(w, 1, 1),
+            )
+        else:
+            self.output_projections = nn.ModuleList(nn.Conv2d(w, ch, 1) for ch in channels)
+            # Only gates are zero. Zeroing gates AND projections would stall the
+            # final-loss gradient path. Auxiliary coarse supervision starts at step 1.
+            self.alpha = nn.Parameter(torch.zeros(len(channels)))
 
     def forward(self, pyramid, output_size):
         levels = [layer(feature.float()) for layer, feature in zip(self.projections, pyramid)]
@@ -235,15 +250,7 @@ class BoundaryContrastHead(nn.Module):
             refined.append(feature)
             gates.append(gate)
         refined.reverse()
-        size = refined[0].shape[-2:]
-        decoded = self.decoder(
-            torch.cat(
-                [F.interpolate(x, size, mode="bilinear", align_corners=False) for x in refined], 1
-            )
-        )
-        logits = F.interpolate(decoded.float(), output_size, mode="bilinear", align_corners=False)
-        return {
-            "logits": logits,
+        result = {
             "coarse_logits": coarse.float(),
             "probability": probability,
             "boundary": boundary,
@@ -252,6 +259,28 @@ class BoundaryContrastHead(nn.Module):
             "boundary_mix": boundary_mix,
             "fusion_gates": gates,
         }
+        if self.config.architecture == "custom_decoder":
+            size = refined[0].shape[-2:]
+            decoded = self.decoder(
+                torch.cat(
+                    [F.interpolate(x, size, mode="bilinear", align_corners=False) for x in refined],
+                    1,
+                )
+            )
+            result["logits"] = F.interpolate(
+                decoded.float(), output_size, mode="bilinear", align_corners=False
+            )
+        else:
+            # Each scale is projected separately to its ORIGINAL decoder-interface
+            # channel count and grid. Never mix the three original bypass tensors.
+            result["adapted_pyramid"] = [
+                original + self.alpha[i] * projection(proposal)
+                for i, (original, projection, proposal) in enumerate(
+                    zip(pyramid, self.output_projections, refined)
+                )
+            ]
+            result["feature_gates"] = self.alpha
+        return result
 
 
 class BoundaryContrastSAM2(nn.Module):
@@ -266,11 +295,22 @@ class BoundaryContrastSAM2(nn.Module):
             baseline.sam.sam_prompt_encoder.embed_dim,
         ]
         self.head = BoundaryContrastHead(channels, config)
+        self.reference_decoder = (
+            deepcopy(decoder).requires_grad_(False).eval() if config.train_decoder else None
+        )
+        if config.train_decoder:
+            decoder.requires_grad_(True)
+            # These projections run inside frozen forward_image, not final decode.
+            decoder.conv_s0.requires_grad_(False)
+            decoder.conv_s1.requires_grad_(False)
         self.train()
 
     def train(self, mode=True):
         super().train(mode)
         self.baseline.eval()
+        if self.config.train_decoder:
+            self.baseline.sam.sam_mask_decoder.train(mode)
+            self.reference_decoder.eval()
         return self
 
     def forward_details(self, images, include_baseline=True):
@@ -288,7 +328,12 @@ class BoundaryContrastSAM2(nn.Module):
             reference = None
             if include_baseline:
                 _, dense = sam.sam_prompt_encoder(points=None, boxes=None, masks=None)
-                masks, _, _, _ = sam.sam_mask_decoder(
+                reference_decoder = (
+                    self.reference_decoder
+                    if self.reference_decoder is not None
+                    else sam.sam_mask_decoder
+                )
+                masks, _, _, _ = reference_decoder(
                     image_embeddings=embed,
                     image_pe=sam.sam_prompt_encoder.get_dense_pe(),
                     sparse_prompt_embeddings=base.task_tokens.expand(len(images), -1, -1),
@@ -301,6 +346,23 @@ class BoundaryContrastSAM2(nn.Module):
                     masks.float(), images.shape[-2:], mode="bilinear", align_corners=False
                 )
         result = self.head(pyramid, images.shape[-2:])
+        if self.config.architecture == "baseline_adapter":
+            features = result["adapted_pyramid"]
+            # Frozen weights still differentiate with respect to adapted features.
+            # Original task tokens, no-mask embedding and positional encoding stay.
+            _, dense = sam.sam_prompt_encoder(points=None, boxes=None, masks=None)
+            masks, _, _, _ = sam.sam_mask_decoder(
+                image_embeddings=features[-1],
+                image_pe=sam.sam_prompt_encoder.get_dense_pe(),
+                sparse_prompt_embeddings=base.task_tokens.expand(len(images), -1, -1),
+                dense_prompt_embeddings=dense.expand(len(images), -1, -1, -1),
+                multimask_output=False,
+                repeat_image=False,
+                high_res_features=features[:-1],
+            )
+            result["logits"] = F.interpolate(
+                masks.float(), images.shape[-2:], mode="bilinear", align_corners=False
+            )
         if reference is not None:
             result["baseline_logits"] = reference
         if not torch.isfinite(result["logits"]).all():

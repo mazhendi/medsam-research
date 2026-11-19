@@ -7,3 +7,7 @@ affinity_strength: 4.0
 coarse_weight: 0.2
 # full | no_contrast | no_constraint | equal_fusion | no_boundary
 mode: full
+
+# Corrected: retain the trained SAM mask decoder, task tokens and feature bypasses.
+architecture: baseline_adapter
+train_decoder: false

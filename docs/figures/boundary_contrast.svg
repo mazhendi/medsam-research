@@ -1,98 +1,145 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="2200" height="1190" viewBox="0 0 2200 1190">
-<rect x="0" y="0" width="2200" height="1190" rx="0" fill="white" stroke="white" stroke-width="0"/>
-<text x="34" y="49" font-family="Liberation Serif, Times New Roman, serif" font-size="34" font-weight="700" text-anchor="start" fill="#242424">Directional Boundary Contrast for Polyp Segmentation</text>
-<text x="2160" y="47" font-family="Liberation Serif, Times New Roman, serif" font-size="22" font-weight="400" text-anchor="end" fill="#737373">Implemented prototype · efficacy unvalidated</text>
-<rect x="30" y="80" width="2140" height="540" rx="0" fill="#fbfcfa" stroke="#5e804d" stroke-width="1.2" stroke-dasharray="8 6"/>
-<text x="50" y="115" font-family="Liberation Serif, Times New Roman, serif" font-size="27" font-weight="700" text-anchor="start" fill="#5e804d">A | Frozen encoding, two boundary-aware modules, direct custom decoding</text>
-<rect x="64" y="274" width="128" height="112" rx="12" fill="#f5f5f5" stroke="#999" stroke-width="1.5"/>
-<text x="128.0" y="321.5" font-family="Liberation Serif, Times New Roman, serif" font-size="26" font-weight="400" text-anchor="middle" fill="#242424">Input</text>
-<text x="128.0" y="354.5" font-family="Liberation Serif, Times New Roman, serif" font-size="26" font-weight="400" text-anchor="middle" fill="#242424">image</text>
-<path d="M192,330 L234,330" fill="none" stroke="#242424" stroke-width="2"/>
-<path d="M234,330 L224.0,326.0 L224.0,334.0 Z" fill="#242424" stroke="#242424" stroke-width="0"/>
-<rect x="234" y="261" width="263" height="138" rx="12" fill="#e6efdb" stroke="#5e804d" stroke-width="1.5"/>
-<text x="365.5" y="320.0" font-family="Liberation Serif, Times New Roman, serif" font-size="29" font-weight="400" text-anchor="middle" fill="#242424">Frozen SAM2</text>
-<text x="365.5" y="356.0" font-family="Liberation Serif, Times New Roman, serif" font-size="29" font-weight="400" text-anchor="middle" fill="#242424">image encoder</text>
-<path d="M242.0,279.0 L262.0,279.0" fill="none" stroke="#5e804d" stroke-width="1.5"/>
-<path d="M247.0,270.33974596215563 L257.0,287.66025403784437" fill="none" stroke="#5e804d" stroke-width="1.5"/>
-<path d="M257.0,270.33974596215563 L247.0,287.66025403784437" fill="none" stroke="#5e804d" stroke-width="1.5"/>
-<path d="M497,330 L538,330" fill="none" stroke="#5e804d" stroke-width="2"/>
-<path d="M538,330 L528.0,326.0 L528.0,334.0 Z" fill="#5e804d" stroke="#5e804d" stroke-width="0"/>
-<rect x="538" y="261" width="265" height="138" rx="12" fill="#edf2e7" stroke="#5e804d" stroke-width="1.5"/>
-<text x="670.5" y="322.0" font-family="Liberation Serif, Times New Roman, serif" font-size="25" font-weight="400" text-anchor="middle" fill="#242424">3-scale projection</text>
-<text x="670.5" y="354.0" font-family="Liberation Serif, Times New Roman, serif" font-size="25" font-weight="400" text-anchor="middle" fill="#242424">Conv1×1 → width 32</text>
-<path d="M803,330 L845,330 L845,279" fill="none" stroke="#337e86" stroke-width="2"/>
-<path d="M845,279 L900,279" fill="none" stroke="#337e86" stroke-width="2"/>
-<path d="M900,279 L890.0,275.0 L890.0,283.0 Z" fill="#337e86" stroke="#337e86" stroke-width="0"/>
-<rect x="900" y="235" width="295" height="88" rx="12" fill="#e8f3f3" stroke="#337e86" stroke-width="1.5"/>
-<text x="1047.5" y="270.5" font-family="Liberation Serif, Times New Roman, serif" font-size="26" font-weight="400" text-anchor="middle" fill="#242424">B. Inner–Outer</text>
-<text x="1047.5" y="303.5" font-family="Liberation Serif, Times New Roman, serif" font-size="26" font-weight="400" text-anchor="middle" fill="#242424">Contrast Boundary</text>
-<path d="M803,330 L825,330 L825,165" fill="none" stroke="#5e804d" stroke-width="2"/>
-<path d="M825,165 L900,165" fill="none" stroke="#5e804d" stroke-width="2"/>
-<path d="M900,165 L890.0,161.0 L890.0,169.0 Z" fill="#5e804d" stroke="#5e804d" stroke-width="0"/>
-<circle cx="825" cy="330" r="4" fill="#5e804d"/>
-<rect x="900" y="120" width="295" height="80" rx="12" fill="#fcf4e6" stroke="#9e7536" stroke-width="1.5"/>
-<text x="1047.5" y="153.5" font-family="Liberation Serif, Times New Roman, serif" font-size="22" font-weight="400" text-anchor="middle" fill="#242424">Coarse head on F3</text>
-<text x="1047.5" y="182.5" font-family="Liberation Serif, Times New Roman, serif" font-size="22" font-weight="400" text-anchor="middle" fill="#242424">Conv1×1 → resize → sigmoid</text>
-<path d="M1050,200 L1050,235" fill="none" stroke="#9e7536" stroke-width="2"/>
-<path d="M1050,235 L1054.0,225.0 L1046.0,225.0 Z" fill="#9e7536" stroke="#9e7536" stroke-width="0"/>
-<text x="1086" y="226" font-family="Liberation Serif, Times New Roman, serif" font-size="23" font-weight="400" text-anchor="middle" fill="#9e7536">p0</text>
-<path d="M1195,279 L1315,279 L1315,303 L1355,303" fill="none" stroke="#337e86" stroke-width="2"/>
-<path d="M1355,303 L1345.0,299.0 L1345.0,307.0 Z" fill="#337e86" stroke="#337e86" stroke-width="0"/>
-<rect x="1229" y="262" width="55" height="32" rx="4" fill="white" stroke="#337e86" stroke-width="1.3"/>
-<text x="1256.5" y="286" font-family="Liberation Serif, Times New Roman, serif" font-size="23" font-weight="400" text-anchor="middle" fill="#337e86">B</text>
-<path d="M803,330 L1355,330" fill="none" stroke="#5e804d" stroke-width="2"/>
-<path d="M1355,330 L1345.0,326.0 L1345.0,334.0 Z" fill="#5e804d" stroke="#5e804d" stroke-width="0"/>
-<rect x="1355" y="268" width="333" height="140" rx="12" fill="#f0e7f8" stroke="#8155a6" stroke-width="1.5"/>
-<text x="1521.5" y="314.0" font-family="Liberation Serif, Times New Roman, serif" font-size="25" font-weight="400" text-anchor="middle" fill="#242424">C. Boundary-Constrained</text>
-<text x="1521.5" y="346.0" font-family="Liberation Serif, Times New Roman, serif" font-size="25" font-weight="400" text-anchor="middle" fill="#242424">Cross-Scale Fusion</text>
-<text x="1521.5" y="378.0" font-family="Liberation Serif, Times New Roman, serif" font-size="25" font-weight="400" text-anchor="middle" fill="#242424">F3 → F2 → F1</text>
-<path d="M1688,330 L1734,330" fill="none" stroke="#8155a6" stroke-width="2"/>
-<path d="M1734,330 L1724.0,326.0 L1724.0,334.0 Z" fill="#8155a6" stroke="#8155a6" stroke-width="0"/>
-<rect x="1734" y="261" width="247" height="138" rx="12" fill="#f9eded" stroke="#9c4e50" stroke-width="1.5"/>
-<text x="1857.5" y="308.0" font-family="Liberation Serif, Times New Roman, serif" font-size="23" font-weight="400" text-anchor="middle" fill="#242424">Custom decoder</text>
-<text x="1857.5" y="338.0" font-family="Liberation Serif, Times New Roman, serif" font-size="23" font-weight="400" text-anchor="middle" fill="#242424">Resize + concat</text>
-<text x="1857.5" y="368.0" font-family="Liberation Serif, Times New Roman, serif" font-size="23" font-weight="400" text-anchor="middle" fill="#242424">Conv-GN-GELU-Conv</text>
-<path d="M1981,330 L2026,330" fill="none" stroke="#9c4e50" stroke-width="2"/>
-<path d="M2026,330 L2016.0,326.0 L2016.0,334.0 Z" fill="#9c4e50" stroke="#9c4e50" stroke-width="0"/>
-<rect x="2026" y="287" width="100" height="86" rx="0" fill="#111" stroke="#111" stroke-width="0"/>
-<path d="M2053,328 C2045,301 2099,300 2102,329 C2110,359 2053,363 2053,328 Z" fill="white" stroke="white" stroke-width="0"/>
-<text x="2076" y="416" font-family="Liberation Serif, Times New Roman, serif" font-size="24" font-weight="400" text-anchor="middle" fill="#242424">Mask*</text>
-<text x="1100" y="578" font-family="Liberation Serif, Times New Roman, serif" font-size="24" font-weight="400" text-anchor="middle" fill="#737373">Final prediction uses the custom decoder. The frozen SAM mask decoder is only an evaluation comparator.</text>
-<rect x="30" y="650" width="1040" height="420" rx="0" fill="#f7fbfb" stroke="#337e86" stroke-width="1.2" stroke-dasharray="8 6"/>
-<text x="50" y="685" font-family="Liberation Serif, Times New Roman, serif" font-size="27" font-weight="700" text-anchor="start" fill="#337e86">B | Internal structure</text>
-<text x="550" y="729" font-family="Liberation Serif, Times New Roman, serif" font-size="26" font-weight="400" text-anchor="middle" fill="#337e86">Parallel local / inner / outer feature paths</text>
-<text x="550" y="762" font-family="Liberation Serif, Times New Roman, serif" font-size="26" font-weight="400" text-anchor="middle" fill="#337e86">Multi-radius paired contrast: Fs(x−rn) − Fs(x+rn)</text>
-<text x="550" y="795" font-family="Liberation Serif, Times New Roman, serif" font-size="26" font-weight="400" text-anchor="middle" fill="#337e86">Predicted outward normal: n = −grad(p0) / norm</text>
-<text x="550" y="828" font-family="Liberation Serif, Times New Roman, serif" font-size="26" font-weight="400" text-anchor="middle" fill="#337e86">Reliability-gated fusion with local fallback</text>
-<rect x="267" y="891" width="95" height="80" rx="1" fill="#f8f4fc" stroke="#c5aedb" stroke-width="1"/>
-<path d="M339.5,931.0 L340.1,933.3 L340.0,935.6 L339.3,937.7 L338.1,939.8 L336.7,941.6 L335.1,943.3 L333.4,945.0 L331.7,946.5 L329.9,947.9 L328.0,949.1 L325.9,950.1 L323.6,950.7 L321.2,950.8 L318.8,950.6 L316.6,950.0 L314.5,949.3 L312.6,948.6 L310.7,948.2 L308.7,948.0 L306.6,948.2 L304.1,948.5 L301.4,948.7 L298.5,948.6 L295.6,947.9 L293.2,946.7 L291.3,945.0 L290.1,942.7 L289.7,940.2 L290.0,937.7 L290.8,935.2 L291.8,933.0 L292.8,931.0 L293.6,929.1 L294.1,927.4 L294.5,925.6 L294.9,923.7 L295.4,921.8 L296.2,920.0 L297.3,918.3 L298.7,916.8 L300.3,915.4 L302.0,914.2 L303.8,913.1 L305.7,911.9 L307.6,910.7 L309.7,909.4 L312.0,908.2 L314.5,907.3 L317.2,906.8 L319.8,907.0 L322.3,907.9 L324.5,909.4 L326.1,911.4 L327.3,913.8 L328.1,916.1 L328.7,918.3 L329.3,920.1 L330.1,921.6 L331.3,922.9 L332.9,924.1 L334.8,925.5 L336.7,927.0 L338.3,928.9 L339.5,931.0 Z" fill="none" stroke="#8155a6" stroke-width="1.5"/>
-<path d="M346.5,931.0 L347.2,933.9 L347.1,936.8 L346.2,939.6 L344.7,942.2 L342.9,944.6 L340.8,946.8 L338.7,948.9 L336.6,950.8 L334.3,952.6 L331.8,954.2 L329.1,955.5 L326.1,956.2 L323.1,956.4 L320.0,956.0 L317.2,955.3 L314.5,954.4 L312.0,953.5 L309.6,953.0 L307.1,952.8 L304.4,953.0 L301.2,953.4 L297.7,953.6 L294.0,953.5 L290.3,952.7 L287.2,951.1 L284.7,948.9 L283.3,946.0 L282.8,942.8 L283.2,939.5 L284.2,936.4 L285.4,933.6 L286.7,931.0 L287.7,928.6 L288.4,926.3 L288.9,924.0 L289.4,921.7 L290.1,919.3 L291.1,916.9 L292.5,914.8 L294.2,912.8 L296.3,911.1 L298.5,909.5 L300.8,908.0 L303.2,906.5 L305.7,904.9 L308.4,903.3 L311.3,901.8 L314.5,900.6 L317.9,900.0 L321.3,900.3 L324.5,901.4 L327.3,903.3 L329.4,905.9 L330.9,908.9 L331.9,911.9 L332.7,914.7 L333.4,917.0 L334.5,919.0 L336.0,920.7 L338.1,922.2 L340.5,923.9 L342.9,925.9 L345.0,928.3 L346.5,931.0 Z" fill="none" stroke="#8155a6" stroke-width="1.5"/>
-<rect x="467" y="891" width="95" height="80" rx="1" fill="#f8f4fc" stroke="#c5aedb" stroke-width="1"/>
-<path d="M543.5,931.0 L543.7,933.4 L542.9,935.8 L541.4,937.9 L539.4,939.7 L537.1,941.3 L534.9,942.6 L532.8,943.7 L530.9,944.9 L529.1,946.1 L527.3,947.2 L525.4,948.3 L523.4,949.2 L521.3,949.9 L519.0,950.2 L516.7,950.3 L514.5,950.3 L512.3,950.2 L510.0,950.2 L507.6,950.2 L505.0,950.4 L502.3,950.4 L499.3,950.2 L496.5,949.6 L493.9,948.5 L491.8,946.8 L490.4,944.6 L489.9,942.1 L490.2,939.5 L491.0,937.0 L492.1,934.8 L493.2,932.8 L494.0,931.0 L494.3,929.3 L494.3,927.6 L494.0,925.7 L493.6,923.7 L493.4,921.5 L493.7,919.2 L494.5,917.1 L495.9,915.2 L497.7,913.6 L499.8,912.3 L502.1,911.3 L504.4,910.4 L506.9,909.7 L509.4,909.1 L511.9,908.6 L514.5,908.3 L517.1,908.4 L519.7,909.0 L522.0,910.1 L524.0,911.6 L525.6,913.4 L526.9,915.3 L527.9,917.2 L528.9,918.8 L530.1,920.2 L531.6,921.3 L533.6,922.3 L536.0,923.5 L538.4,924.9 L540.7,926.6 L542.5,928.7 L543.5,931.0 Z" fill="none" stroke="#8155a6" stroke-width="1.5"/>
-<path d="M551.7,931.0 L551.8,934.1 L550.9,937.1 L548.9,939.8 L546.4,942.2 L543.5,944.1 L540.6,945.8 L537.9,947.3 L535.5,948.8 L533.2,950.3 L530.9,951.8 L528.5,953.2 L525.9,954.3 L523.2,955.2 L520.3,955.6 L517.4,955.8 L514.5,955.7 L511.6,955.6 L508.7,955.5 L505.7,955.6 L502.4,955.8 L498.8,955.9 L495.1,955.6 L491.4,954.9 L488.1,953.4 L485.4,951.2 L483.7,948.4 L483.0,945.2 L483.4,941.9 L484.4,938.7 L485.8,935.8 L487.2,933.3 L488.2,931.0 L488.7,928.8 L488.6,926.6 L488.2,924.2 L487.7,921.6 L487.5,918.8 L487.9,915.9 L488.9,913.2 L490.6,910.8 L492.9,908.7 L495.6,907.1 L498.6,905.8 L501.6,904.7 L504.7,903.7 L507.9,902.9 L511.2,902.3 L514.5,901.9 L517.9,902.1 L521.1,902.8 L524.1,904.2 L526.7,906.1 L528.7,908.5 L530.3,910.9 L531.6,913.3 L532.9,915.4 L534.5,917.1 L536.4,918.6 L539.0,919.9 L542.0,921.4 L545.1,923.1 L548.1,925.3 L550.4,928.0 L551.7,931.0 Z" fill="none" stroke="#8155a6" stroke-width="1.5"/>
-<rect x="667" y="891" width="95" height="80" rx="1" fill="#f8f4fc" stroke="#c5aedb" stroke-width="1"/>
-<path d="M745.8,931.0 L745.1,933.4 L743.5,935.6 L741.2,937.5 L738.5,939.0 L735.9,940.2 L733.6,941.2 L731.6,942.3 L730.0,943.5 L728.7,944.9 L727.4,946.4 L725.9,948.1 L724.1,949.6 L722.0,950.9 L719.7,951.8 L717.1,952.4 L714.5,952.6 L711.9,952.6 L709.2,952.3 L706.5,952.0 L703.8,951.6 L701.1,951.1 L698.4,950.3 L695.9,949.1 L693.8,947.6 L692.2,945.7 L691.3,943.4 L691.1,941.0 L691.5,938.6 L692.2,936.4 L693.0,934.4 L693.4,932.7 L693.5,931.0 L693.0,929.3 L692.1,927.4 L691.1,925.3 L690.2,922.9 L689.8,920.4 L690.1,917.9 L691.2,915.6 L693.0,913.8 L695.5,912.4 L698.3,911.5 L701.2,911.0 L704.1,910.8 L706.8,910.7 L709.5,910.7 L712.0,910.6 L714.5,910.6 L717.0,910.8 L719.4,911.2 L721.7,911.9 L723.9,912.8 L725.8,914.1 L727.5,915.4 L729.1,916.7 L730.8,917.9 L732.7,919.0 L734.9,920.1 L737.3,921.2 L739.9,922.6 L742.3,924.2 L744.3,926.2 L745.5,928.5 L745.8,931.0 Z" fill="none" stroke="#8155a6" stroke-width="1.5"/>
-<path d="M754.6,931.0 L753.7,934.1 L751.6,936.9 L748.6,939.3 L745.3,941.2 L742.0,942.8 L739.0,944.1 L736.5,945.4 L734.4,947.0 L732.7,948.7 L731.0,950.8 L729.1,952.8 L726.8,954.8 L724.1,956.5 L721.1,957.7 L717.9,958.4 L714.5,958.7 L711.1,958.6 L707.7,958.3 L704.3,957.9 L700.9,957.4 L697.4,956.7 L693.9,955.7 L690.7,954.2 L688.0,952.3 L686.0,949.8 L684.8,946.9 L684.6,943.8 L685.1,940.8 L686.0,937.9 L686.9,935.4 L687.5,933.1 L687.6,931.0 L687.0,928.8 L685.8,926.4 L684.5,923.7 L683.4,920.7 L682.8,917.4 L683.2,914.2 L684.6,911.3 L687.0,909.0 L690.1,907.2 L693.7,906.1 L697.5,905.4 L701.1,905.1 L704.7,905.0 L708.0,905.0 L711.3,904.9 L714.5,904.9 L717.7,905.1 L720.8,905.6 L723.8,906.5 L726.5,907.7 L729.0,909.3 L731.2,911.0 L733.3,912.7 L735.4,914.2 L737.8,915.7 L740.6,917.0 L743.7,918.5 L747.0,920.2 L750.1,922.3 L752.7,924.9 L754.2,927.9 L754.6,931.0 Z" fill="none" stroke="#8155a6" stroke-width="1.5"/>
-<text x="550" y="1020" font-family="Liberation Serif, Times New Roman, serif" font-size="24" font-weight="400" text-anchor="middle" fill="#737373">See boundary_contrast_module_b.svg for exact operations</text>
-<rect x="1100" y="650" width="1070" height="420" rx="0" fill="#faf7fd" stroke="#8155a6" stroke-width="1.2" stroke-dasharray="8 6"/>
-<text x="1120" y="685" font-family="Liberation Serif, Times New Roman, serif" font-size="27" font-weight="700" text-anchor="start" fill="#8155a6">C | Internal structure</text>
-<rect x="1150" y="742" width="438" height="76" rx="12" fill="#e8f3f3" stroke="#337e86" stroke-width="1.5"/>
-<text x="1369.0" y="788.0" font-family="Liberation Serif, Times New Roman, serif" font-size="26" font-weight="400" text-anchor="middle" fill="#242424">Semantic-guided detail D</text>
-<rect x="1150" y="890" width="438" height="76" rx="12" fill="#f0e7f8" stroke="#8155a6" stroke-width="1.5"/>
-<text x="1369.0" y="936.0" font-family="Liberation Serif, Times New Roman, serif" font-size="25" font-weight="400" text-anchor="middle" fill="#242424">Boundary-constrained semantic S</text>
-<path d="M1588,780 L1720,780 L1720,848" fill="none" stroke="#8155a6" stroke-width="2"/>
-<path d="M1720,848 L1724.0,838.0 L1716.0,838.0 Z" fill="#8155a6" stroke="#8155a6" stroke-width="0"/>
-<path d="M1588,928 L1720,928 L1720,880" fill="none" stroke="#8155a6" stroke-width="2"/>
-<path d="M1720,880 L1716.0,890.0 L1724.0,890.0 Z" fill="#8155a6" stroke="#8155a6" stroke-width="0"/>
-<circle cx="1720" cy="864" r="15" fill="white" stroke="#8155a6" stroke-width="1.6"/>
-<text x="1720" y="871" font-family="Liberation Serif, Times New Roman, serif" font-size="22" font-weight="400" text-anchor="middle" fill="#8155a6">+</text>
-<text x="1643" y="763" font-family="Liberation Serif, Times New Roman, serif" font-size="24" font-weight="400" text-anchor="middle" fill="#8155a6">g</text>
-<text x="1643" y="959" font-family="Liberation Serif, Times New Roman, serif" font-size="24" font-weight="400" text-anchor="middle" fill="#8155a6">1−g</text>
-<path d="M1736,864 L1852,864" fill="none" stroke="#8155a6" stroke-width="2"/>
-<path d="M1852,864 L1842.0,860.0 L1842.0,868.0 Z" fill="#8155a6" stroke="#8155a6" stroke-width="0"/>
-<rect x="1852" y="848" width="150" height="32" rx="4" fill="white" stroke="#8155a6" stroke-width="1.3"/>
-<text x="1927.0" y="872" font-family="Liberation Serif, Times New Roman, serif" font-size="23" font-weight="400" text-anchor="middle" fill="#8155a6">Fout</text>
-<text x="1635" y="1020" font-family="Liberation Serif, Times New Roman, serif" font-size="23" font-weight="400" text-anchor="middle" fill="#737373">Learned complementary gates; affinity controls cross-boundary mixing</text>
-<text x="34" y="1122" font-family="Liberation Serif, Times New Roman, serif" font-size="23" font-weight="400" text-anchor="start" fill="#737373">Legend: matching named ports share a tensor. All intermediate maps and output masks are schematic.</text>
-<text x="34" y="1163" font-family="Liberation Serif, Times New Roman, serif" font-size="23" font-weight="400" text-anchor="start" fill="#737373">Code: boundary_contrast.py   |   Details and ablations: docs/BOUNDARY_CONTRAST.md</text>
+<svg xmlns="http://www.w3.org/2000/svg" width="2200" height="1220" viewBox="0 0 2200 1220">
+<rect x="0" y="0" width="2200" height="1220" rx="0" fill="white" stroke="white" stroke-width="0"/>
+<text x="34" y="49" font-family="Liberation Serif, Times New Roman, serif" font-size="34" font-weight="700" text-anchor="start" fill="#242424">Baseline-Preserving Boundary Enhancement</text>
+<text x="2160" y="47" font-family="Liberation Serif, Times New Roman, serif" font-size="22" font-weight="400" text-anchor="end" fill="#737373">Corrected implementation · efficacy unvalidated</text>
+<rect x="30" y="80" width="2140" height="505" rx="0" fill="#fbfcfe" stroke="#477ba8" stroke-width="1.2" stroke-dasharray="8 6"/>
+<text x="50" y="115" font-family="Liberation Serif, Times New Roman, serif" font-size="27" font-weight="700" text-anchor="start" fill="#477ba8">A | Original trained SAM2 segmentation path</text>
+<rect x="52" y="276" width="100" height="100" rx="12" fill="#f5f5f5" stroke="#999" stroke-width="1.5"/>
+<text x="102.0" y="318.0" font-family="Liberation Serif, Times New Roman, serif" font-size="25" font-weight="400" text-anchor="middle" fill="#242424">Input</text>
+<text x="102.0" y="350.0" font-family="Liberation Serif, Times New Roman, serif" font-size="25" font-weight="400" text-anchor="middle" fill="#242424">image</text>
+<path d="M152,326 L200,326" fill="none" stroke="#242424" stroke-width="2"/>
+<path d="M200,326 L190.0,322.0 L190.0,330.0 Z" fill="#242424" stroke="#242424" stroke-width="0"/>
+<rect x="200" y="145" width="290" height="365" rx="12" fill="#e6efdb" stroke="#5e804d" stroke-width="1.5"/>
+<text x="345.0" y="281.5" font-family="Liberation Serif, Times New Roman, serif" font-size="29" font-weight="400" text-anchor="middle" fill="#242424">Existing SAM2.1</text>
+<text x="345.0" y="317.5" font-family="Liberation Serif, Times New Roman, serif" font-size="29" font-weight="400" text-anchor="middle" fill="#242424">image encoder</text>
+<text x="345.0" y="353.5" font-family="Liberation Serif, Times New Roman, serif" font-size="29" font-weight="400" text-anchor="middle" fill="#242424"></text>
+<text x="345.0" y="389.5" font-family="Liberation Serif, Times New Roman, serif" font-size="29" font-weight="400" text-anchor="middle" fill="#242424">Frozen</text>
+<path d="M220.0,171.0 L240.0,171.0" fill="none" stroke="#5e804d" stroke-width="1.5"/>
+<path d="M225.0,162.3397459621556 L235.0,179.6602540378444" fill="none" stroke="#5e804d" stroke-width="1.5"/>
+<path d="M235.0,162.3397459621556 L225.0,179.6602540378444" fill="none" stroke="#5e804d" stroke-width="1.5"/>
+<path d="M490,200 L535,200" fill="none" stroke="#5e804d" stroke-width="2"/>
+<path d="M535,200 L525.0,196.0 L525.0,204.0 Z" fill="#5e804d" stroke="#5e804d" stroke-width="0"/>
+<rect x="552" y="159" width="30" height="58" rx="0" fill="#e6efdb" stroke="#5e804d" stroke-width="1"/>
+<rect x="546" y="165" width="30" height="58" rx="0" fill="#e6efdb" stroke="#5e804d" stroke-width="1"/>
+<rect x="540" y="171" width="30" height="58" rx="0" fill="#e6efdb" stroke="#5e804d" stroke-width="1"/>
+<text x="623" y="207" font-family="Liberation Serif, Times New Roman, serif" font-size="28" font-weight="400" text-anchor="middle" fill="#5e804d">F1</text>
+<path d="M650,200 L1464,200" fill="none" stroke="#5e804d" stroke-width="2"/>
+<path d="M1464,200 L1454.0,196.0 L1454.0,204.0 Z" fill="#5e804d" stroke="#5e804d" stroke-width="0"/>
+<rect x="1400" y="116" width="160" height="32" rx="4" fill="white" stroke="#8155a6" stroke-width="1.3"/>
+<text x="1480.0" y="140" font-family="Liberation Serif, Times New Roman, serif" font-size="23" font-weight="400" text-anchor="middle" fill="#8155a6">ΔF1</text>
+<path d="M1480,148 L1480,184" fill="none" stroke="#8155a6" stroke-width="2"/>
+<path d="M1480,184 L1484.0,174.0 L1476.0,174.0 Z" fill="#8155a6" stroke="#8155a6" stroke-width="0"/>
+<circle cx="1480" cy="200" r="15" fill="white" stroke="#8155a6" stroke-width="1.6"/>
+<text x="1480" y="207" font-family="Liberation Serif, Times New Roman, serif" font-size="22" font-weight="400" text-anchor="middle" fill="#8155a6">+</text>
+<path d="M1496,200 L1650,200" fill="none" stroke="#477ba8" stroke-width="2"/>
+<path d="M1650,200 L1640.0,196.0 L1640.0,204.0 Z" fill="#477ba8" stroke="#477ba8" stroke-width="0"/>
+<text x="1572" y="188" font-family="Liberation Serif, Times New Roman, serif" font-size="27" font-weight="400" text-anchor="middle" fill="#477ba8">F1*</text>
+<path d="M490,320 L535,320" fill="none" stroke="#5e804d" stroke-width="2"/>
+<path d="M535,320 L525.0,316.0 L525.0,324.0 Z" fill="#5e804d" stroke="#5e804d" stroke-width="0"/>
+<rect x="552" y="279" width="30" height="58" rx="0" fill="#e6efdb" stroke="#5e804d" stroke-width="1"/>
+<rect x="546" y="285" width="30" height="58" rx="0" fill="#e6efdb" stroke="#5e804d" stroke-width="1"/>
+<rect x="540" y="291" width="30" height="58" rx="0" fill="#e6efdb" stroke="#5e804d" stroke-width="1"/>
+<text x="623" y="327" font-family="Liberation Serif, Times New Roman, serif" font-size="28" font-weight="400" text-anchor="middle" fill="#5e804d">F2</text>
+<path d="M650,320 L1464,320" fill="none" stroke="#5e804d" stroke-width="2"/>
+<path d="M1464,320 L1454.0,316.0 L1454.0,324.0 Z" fill="#5e804d" stroke="#5e804d" stroke-width="0"/>
+<rect x="1400" y="236" width="160" height="32" rx="4" fill="white" stroke="#8155a6" stroke-width="1.3"/>
+<text x="1480.0" y="260" font-family="Liberation Serif, Times New Roman, serif" font-size="23" font-weight="400" text-anchor="middle" fill="#8155a6">ΔF2</text>
+<path d="M1480,268 L1480,304" fill="none" stroke="#8155a6" stroke-width="2"/>
+<path d="M1480,304 L1484.0,294.0 L1476.0,294.0 Z" fill="#8155a6" stroke="#8155a6" stroke-width="0"/>
+<circle cx="1480" cy="320" r="15" fill="white" stroke="#8155a6" stroke-width="1.6"/>
+<text x="1480" y="327" font-family="Liberation Serif, Times New Roman, serif" font-size="22" font-weight="400" text-anchor="middle" fill="#8155a6">+</text>
+<path d="M1496,320 L1650,320" fill="none" stroke="#477ba8" stroke-width="2"/>
+<path d="M1650,320 L1640.0,316.0 L1640.0,324.0 Z" fill="#477ba8" stroke="#477ba8" stroke-width="0"/>
+<text x="1572" y="308" font-family="Liberation Serif, Times New Roman, serif" font-size="27" font-weight="400" text-anchor="middle" fill="#477ba8">F2*</text>
+<path d="M490,440 L535,440" fill="none" stroke="#5e804d" stroke-width="2"/>
+<path d="M535,440 L525.0,436.0 L525.0,444.0 Z" fill="#5e804d" stroke="#5e804d" stroke-width="0"/>
+<rect x="552" y="399" width="30" height="58" rx="0" fill="#e6efdb" stroke="#5e804d" stroke-width="1"/>
+<rect x="546" y="405" width="30" height="58" rx="0" fill="#e6efdb" stroke="#5e804d" stroke-width="1"/>
+<rect x="540" y="411" width="30" height="58" rx="0" fill="#e6efdb" stroke="#5e804d" stroke-width="1"/>
+<text x="623" y="447" font-family="Liberation Serif, Times New Roman, serif" font-size="28" font-weight="400" text-anchor="middle" fill="#5e804d">F3</text>
+<path d="M650,440 L1464,440" fill="none" stroke="#5e804d" stroke-width="2"/>
+<path d="M1464,440 L1454.0,436.0 L1454.0,444.0 Z" fill="#5e804d" stroke="#5e804d" stroke-width="0"/>
+<rect x="1400" y="356" width="160" height="32" rx="4" fill="white" stroke="#8155a6" stroke-width="1.3"/>
+<text x="1480.0" y="380" font-family="Liberation Serif, Times New Roman, serif" font-size="23" font-weight="400" text-anchor="middle" fill="#8155a6">ΔF3</text>
+<path d="M1480,388 L1480,424" fill="none" stroke="#8155a6" stroke-width="2"/>
+<path d="M1480,424 L1484.0,414.0 L1476.0,414.0 Z" fill="#8155a6" stroke="#8155a6" stroke-width="0"/>
+<circle cx="1480" cy="440" r="15" fill="white" stroke="#8155a6" stroke-width="1.6"/>
+<text x="1480" y="447" font-family="Liberation Serif, Times New Roman, serif" font-size="22" font-weight="400" text-anchor="middle" fill="#8155a6">+</text>
+<path d="M1496,440 L1650,440" fill="none" stroke="#477ba8" stroke-width="2"/>
+<path d="M1650,440 L1640.0,436.0 L1640.0,444.0 Z" fill="#477ba8" stroke="#477ba8" stroke-width="0"/>
+<text x="1572" y="428" font-family="Liberation Serif, Times New Roman, serif" font-size="27" font-weight="400" text-anchor="middle" fill="#477ba8">F3*</text>
+<rect x="1650" y="145" width="305" height="365" rx="12" fill="#e5edf6" stroke="#477ba8" stroke-width="1.5"/>
+<text x="1802.5" y="263.5" font-family="Liberation Serif, Times New Roman, serif" font-size="29" font-weight="400" text-anchor="middle" fill="#242424">Existing trained</text>
+<text x="1802.5" y="299.5" font-family="Liberation Serif, Times New Roman, serif" font-size="29" font-weight="400" text-anchor="middle" fill="#242424">SAM2 mask decoder</text>
+<text x="1802.5" y="335.5" font-family="Liberation Serif, Times New Roman, serif" font-size="29" font-weight="400" text-anchor="middle" fill="#242424"></text>
+<text x="1802.5" y="371.5" font-family="Liberation Serif, Times New Roman, serif" font-size="29" font-weight="400" text-anchor="middle" fill="#242424">Preserved weights</text>
+<text x="1802.5" y="407.5" font-family="Liberation Serif, Times New Roman, serif" font-size="29" font-weight="400" text-anchor="middle" fill="#242424">Frozen by default</text>
+<path d="M1955,320 L2014,320" fill="none" stroke="#477ba8" stroke-width="2"/>
+<path d="M2014,320 L2004.0,316.0 L2004.0,324.0 Z" fill="#477ba8" stroke="#477ba8" stroke-width="0"/>
+<rect x="2014" y="276" width="105" height="88" rx="0" fill="#111" stroke="#111" stroke-width="0"/>
+<path d="M2041,318 C2033,291 2087,290 2090,319 C2098,349 2041,353 2041,318 Z" fill="white" stroke="white" stroke-width="0"/>
+<text x="2066" y="410" font-family="Liberation Serif, Times New Roman, serif" font-size="25" font-weight="400" text-anchor="middle" fill="#242424">Mask*</text>
+<text x="1035" y="555" font-family="Liberation Serif, Times New Roman, serif" font-size="22" font-weight="400" text-anchor="middle" fill="#737373">F1/F2: original high-resolution interface; F3: original embedding including no-memory term.</text>
+<rect x="1640" y="635" width="240" height="92" rx="12" fill="#e5edf6" stroke="#477ba8" stroke-width="1.5"/>
+<text x="1760.0" y="673.5" font-family="Liberation Serif, Times New Roman, serif" font-size="24" font-weight="400" text-anchor="middle" fill="#242424">Existing learned</text>
+<text x="1760.0" y="704.5" font-family="Liberation Serif, Times New Roman, serif" font-size="24" font-weight="400" text-anchor="middle" fill="#242424">task tokens</text>
+<path d="M1760,635 L1760,510" fill="none" stroke="#477ba8" stroke-width="2"/>
+<path d="M1760,510 L1756.0,520.0 L1764.0,520.0 Z" fill="#477ba8" stroke="#477ba8" stroke-width="0"/>
+<rect x="1910" y="635" width="255" height="92" rx="12" fill="#e5edf6" stroke="#477ba8" stroke-width="1.5"/>
+<text x="2037.5" y="673.5" font-family="Liberation Serif, Times New Roman, serif" font-size="24" font-weight="400" text-anchor="middle" fill="#242424">Original no-mask</text>
+<text x="2037.5" y="704.5" font-family="Liberation Serif, Times New Roman, serif" font-size="24" font-weight="400" text-anchor="middle" fill="#242424">embedding + PE</text>
+<path d="M2037,635 L2037,550 L1895,550 L1895,510" fill="none" stroke="#477ba8" stroke-width="2"/>
+<path d="M1895,510 L1891.0,520.0 L1899.0,520.0 Z" fill="#477ba8" stroke="#477ba8" stroke-width="0"/>
+<rect x="30" y="620" width="1575" height="365" rx="0" fill="#f7fbfb" stroke="#337e86" stroke-width="1.2" stroke-dasharray="8 6"/>
+<text x="50" y="655" font-family="Liberation Serif, Times New Roman, serif" font-size="27" font-weight="700" text-anchor="start" fill="#337e86">Add-on feature branch</text>
+<rect x="65" y="741" width="130" height="32" rx="4" fill="white" stroke="#337e86" stroke-width="1.3"/>
+<text x="130.0" y="765" font-family="Liberation Serif, Times New Roman, serif" font-size="23" font-weight="400" text-anchor="middle" fill="#337e86">F1, F2</text>
+<path d="M195,757 L250,757" fill="none" stroke="#337e86" stroke-width="2"/>
+<path d="M250,757 L240.0,753.0 L240.0,761.0 Z" fill="#337e86" stroke="#337e86" stroke-width="0"/>
+<rect x="250" y="707" width="270" height="100" rx="12" fill="#e8f3f3" stroke="#337e86" stroke-width="1.5"/>
+<text x="385.0" y="733.0" font-family="Liberation Serif, Times New Roman, serif" font-size="25" font-weight="400" text-anchor="middle" fill="#242424">B. Inner–Outer</text>
+<text x="385.0" y="765.0" font-family="Liberation Serif, Times New Roman, serif" font-size="25" font-weight="400" text-anchor="middle" fill="#242424">Contrast Boundary</text>
+<text x="385.0" y="797.0" font-family="Liberation Serif, Times New Roman, serif" font-size="25" font-weight="400" text-anchor="middle" fill="#242424">Module</text>
+<rect x="320" y="652" width="120" height="32" rx="4" fill="white" stroke="#9e7536" stroke-width="1.3"/>
+<text x="380.0" y="676" font-family="Liberation Serif, Times New Roman, serif" font-size="23" font-weight="400" text-anchor="middle" fill="#9e7536">p0</text>
+<path d="M380,684 L380,707" fill="none" stroke="#9e7536" stroke-width="2"/>
+<path d="M380,707 L384.0,697.0 L376.0,697.0 Z" fill="#9e7536" stroke="#9e7536" stroke-width="0"/>
+<path d="M520,757 L600,757" fill="none" stroke="#337e86" stroke-width="2"/>
+<path d="M600,757 L590.0,753.0 L590.0,761.0 Z" fill="#337e86" stroke="#337e86" stroke-width="0"/>
+<text x="560" y="739" font-family="Liberation Serif, Times New Roman, serif" font-size="25" font-weight="400" text-anchor="middle" fill="#337e86">B</text>
+<rect x="600" y="707" width="300" height="100" rx="12" fill="#f0e7f8" stroke="#8155a6" stroke-width="1.5"/>
+<text x="750.0" y="749.5" font-family="Liberation Serif, Times New Roman, serif" font-size="24" font-weight="400" text-anchor="middle" fill="#242424">C. Boundary-Constrained</text>
+<text x="750.0" y="780.5" font-family="Liberation Serif, Times New Roman, serif" font-size="24" font-weight="400" text-anchor="middle" fill="#242424">Cross-Scale Fusion</text>
+<rect x="625" y="652" width="250" height="32" rx="4" fill="white" stroke="#5e804d" stroke-width="1.3"/>
+<text x="750.0" y="676" font-family="Liberation Serif, Times New Roman, serif" font-size="23" font-weight="400" text-anchor="middle" fill="#5e804d">F1, F2, F3, p0</text>
+<path d="M750,684 L750,707" fill="none" stroke="#5e804d" stroke-width="2"/>
+<path d="M750,707 L754.0,697.0 L746.0,697.0 Z" fill="#5e804d" stroke="#5e804d" stroke-width="0"/>
+<path d="M900,757 L950,757" fill="none" stroke="#8155a6" stroke-width="2"/>
+<path d="M950,757 L940.0,753.0 L940.0,761.0 Z" fill="#8155a6" stroke="#8155a6" stroke-width="0"/>
+<rect x="950" y="707" width="260" height="100" rx="12" fill="#f0e7f8" stroke="#8155a6" stroke-width="1.5"/>
+<text x="1080.0" y="750.0" font-family="Liberation Serif, Times New Roman, serif" font-size="23" font-weight="400" text-anchor="middle" fill="#242424">Per-scale projection</text>
+<text x="1080.0" y="780.0" font-family="Liberation Serif, Times New Roman, serif" font-size="23" font-weight="400" text-anchor="middle" fill="#242424">Pi: width → original Ci</text>
+<path d="M1210,757 L1265,757" fill="none" stroke="#8155a6" stroke-width="2"/>
+<path d="M1265,757 L1255.0,753.0 L1255.0,761.0 Z" fill="#8155a6" stroke="#8155a6" stroke-width="0"/>
+<rect x="1265" y="707" width="275" height="100" rx="12" fill="#f0e7f8" stroke="#8155a6" stroke-width="1.5"/>
+<text x="1402.5" y="749.0" font-family="Liberation Serif, Times New Roman, serif" font-size="25" font-weight="400" text-anchor="middle" fill="#242424">Per-scale gate αi</text>
+<text x="1402.5" y="781.0" font-family="Liberation Serif, Times New Roman, serif" font-size="25" font-weight="400" text-anchor="middle" fill="#242424">Initialized to ZERO</text>
+<path d="M1402,807 L1402,856" fill="none" stroke="#8155a6" stroke-width="2"/>
+<path d="M1402,856 L1406.0,846.0 L1398.0,846.0 Z" fill="#8155a6" stroke="#8155a6" stroke-width="0"/>
+<rect x="1225" y="856" width="355" height="32" rx="4" fill="white" stroke="#8155a6" stroke-width="1.3"/>
+<text x="1402.5" y="880" font-family="Liberation Serif, Times New Roman, serif" font-size="23" font-weight="400" text-anchor="middle" fill="#8155a6">ΔF1, ΔF2, ΔF3</text>
+<text x="675" y="899" font-family="Liberation Serif, Times New Roman, serif" font-size="24" font-weight="400" text-anchor="middle" fill="#737373">Module B / C internals remain in their separate detailed figures.</text>
+<text x="675" y="945" font-family="Liberation Serif, Times New Roman, serif" font-size="23" font-weight="400" text-anchor="middle" fill="#337e86">Only feature deltas are added. There is NO baseline-mask-logit addition.</text>
+<rect x="1805" y="781" width="100" height="32" rx="4" fill="white" stroke="#5e804d" stroke-width="1.3"/>
+<text x="1855.0" y="805" font-family="Liberation Serif, Times New Roman, serif" font-size="23" font-weight="400" text-anchor="middle" fill="#5e804d">F3</text>
+<path d="M1855,813 L1855,842" fill="none" stroke="#5e804d" stroke-width="2"/>
+<path d="M1855,842 L1859.0,832.0 L1851.0,832.0 Z" fill="#5e804d" stroke="#5e804d" stroke-width="0"/>
+<rect x="1640" y="842" width="520" height="74" rx="12" fill="#fcf4e6" stroke="#9e7536" stroke-width="1.5"/>
+<text x="1900.0" y="887.0" font-family="Liberation Serif, Times New Roman, serif" font-size="24" font-weight="400" text-anchor="middle" fill="#242424">Learned coarse head → resize → sigmoid → p0</text>
+<text x="1900" y="962" font-family="Liberation Serif, Times New Roman, serif" font-size="21" font-weight="400" text-anchor="middle" fill="#737373">Same-name ports share a tensor; scales are never shorted.</text>
+<rect x="30" y="1020" width="2140" height="150" rx="0" fill="#faf7fd" stroke="#8155a6" stroke-width="1.2" stroke-dasharray="8 6"/>
+<text x="50" y="1055" font-family="Liberation Serif, Times New Roman, serif" font-size="27" font-weight="700" text-anchor="start" fill="#8155a6">Identity-preserving feature gate</text>
+<text x="650" y="1115" font-family="Liberation Serif, Times New Roman, serif" font-size="34" font-weight="400" text-anchor="middle" fill="#8155a6">Fi* = Fi + αi · Pi(Ri)</text>
+<text x="1540" y="1115" font-family="Liberation Serif, Times New Roman, serif" font-size="28" font-weight="400" text-anchor="middle" fill="#8155a6">At αi = 0: Fi* = Fi; initial output = baseline</text>
+<text x="34" y="1203" font-family="Liberation Serif, Times New Roman, serif" font-size="22" font-weight="400" text-anchor="start" fill="#737373">*Mask schematic. Original checkpoint, tokens, no-mask embedding and positional encoding are retained.</text>
 </svg>

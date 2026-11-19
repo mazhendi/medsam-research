@@ -16,15 +16,25 @@ from .config import SAM2_COMMIT
 from .data import audit_manifests, file_hash, image_tensor, load_pair, read_manifest
 from .metrics import binary_metrics, native_prediction
 
-KIND = "boundary_contrast_sam2_v1"
+KIND = "boundary_contrast_sam2_v2"
+LEGACY_KIND = "boundary_contrast_sam2_v1"
 
 
 def read_artifact(path):
     saved = torch.load(path, map_location="cpu", weights_only=True)
-    if saved.get("kind") != KIND or saved.get("format_version") != 1:
+    if saved.get("kind") not in (KIND, LEGACY_KIND) or saved.get("format_version") != 1:
         raise ValueError("Expected a boundary-contrast checkpoint, not a baseline or probe")
     if saved.get("sam2_commit") != SAM2_COMMIT:
         raise ValueError("SAM2 source version mismatch")
+    # Version-1 files used a different, randomly initialized custom decoder.
+    # Make that architecture explicit; never silently reinterpret old weights.
+    expected = "custom_decoder" if saved["kind"] == LEGACY_KIND else "baseline_adapter"
+    previous = dict(saved["mechanism"])
+    previous.setdefault("architecture", expected)
+    if previous["architecture"] != expected:
+        raise ValueError("Checkpoint kind and decoder architecture disagree")
+    previous.setdefault("train_decoder", False)
+    saved["mechanism"] = BoundaryContrastConfig(**previous).validate().to_dict()
     return saved
 
 
@@ -61,7 +71,7 @@ def build_system(cfg, baseline_checkpoint, mechanism=None, checkpoint=None):
 
 def artifact(model, cfg, baseline_checkpoint, epoch, scores, source_audit):
     return {
-        "kind": KIND,
+        "kind": KIND if model.config.architecture == "baseline_adapter" else LEGACY_KIND,
         "format_version": 1,
         "sam2_commit": SAM2_COMMIT,
         "baseline_sha256": file_hash(baseline_checkpoint),
@@ -135,6 +145,11 @@ def score(model, loader, cfg, device, output=None):
                 {
                     "id": sid,
                     "mean_reliability": float(result["reliability"][i].float().mean()),
+                    "feature_gates": (
+                        result["feature_gates"].detach().cpu().tolist()
+                        if "feature_gates" in result
+                        else None
+                    ),
                     "mean_contrast_gate": float(result["boundary_mix"][i].float().mean()),
                     "mean_detail_gates": [
                         float(g[i].float().mean()) for g in result["fusion_gates"]
@@ -193,13 +208,24 @@ def update(model, batch, device, optimizer, scaler, enabled, dtype):
     scaler.scale(losses["total"]).backward()
     scaler.unscale_(optimizer)
     gradients = {}
-    for name in ("head", "head.boundary", "head.fusions", "head.coarse", "head.decoder"):
+    names = ["head", "head.boundary", "head.fusions", "head.coarse"]
+    names.append(
+        "head.output_projections"
+        if model.config.architecture == "baseline_adapter"
+        else "head.decoder"
+    )
+    if model.config.train_decoder:
+        names.append("baseline.sam.sam_mask_decoder")
+    for name in names:
         grad = [
             p.grad.detach().float().square().sum()
             for p in model.get_submodule(name).parameters()
             if p.grad is not None
         ]
         gradients[name] = float(torch.stack(grad).sum().sqrt()) if grad else 0.0
+    if model.config.architecture == "baseline_adapter":
+        g = model.head.alpha.grad
+        gradients["head.alpha"] = float(g.float().norm()) if g is not None else 0.0
     torch.nn.utils.clip_grad_norm_(
         [p for p in model.parameters() if p.requires_grad], 1.0, error_if_nonfinite=True
     )
@@ -256,12 +282,31 @@ def train_boundary_contrast(cfg, baseline_checkpoint, mechanism, output, epochs=
             "training_precision": str(dtype) if enabled else "float32",
             "trainable_parameters": sum(p.numel() for p in model.parameters() if p.requires_grad),
             "encoder_passes_per_image": 1,
-            "custom_decoder_passes_per_image": 1,
-            "sam_decoder_passes_training": 0,
-            "sam_decoder_passes_paired_evaluation": 1,
-            "note": "Prototype with a new custom decoder. No baseline identity initialization or logit addition.",
+            "custom_decoder_passes_per_image": int(mechanism.architecture == "custom_decoder"),
+            "sam_decoder_passes_training": int(mechanism.architecture == "baseline_adapter"),
+            "sam_decoder_passes_paired_evaluation": 2
+            if mechanism.architecture == "baseline_adapter"
+            else 1,
+            "note": "Architecture is explicit. V2 preserves the original decoder through zero-initialized feature gates; no logit addition.",
         },
     )
+    if mechanism.architecture == "baseline_adapter":
+        model.eval()
+        with torch.no_grad():
+            images = next(iter(validation))["image"].to(device)
+            check = model.forward_details(images)
+            torch.testing.assert_close(
+                check["logits"], check["baseline_logits"], atol=1e-6, rtol=1e-6
+            )
+            gap = float((check["logits"] - check["baseline_logits"]).abs().max())
+        engine.write_json(
+            out / "identity_check.json",
+            {
+                "max_logit_difference": gap,
+                "passed": True,
+                "scope": "First validation batch, before optimizer updates",
+            },
+        )
     initial, _ = score(model, validation, cfg, device)
     engine.write_json(out / "initial_validation.json", initial)
     best, best_epoch = initial["boundary_contrast"]["dice"], 0
@@ -310,11 +355,12 @@ def train_boundary_contrast(cfg, baseline_checkpoint, mechanism, output, epochs=
             if device.type == "cuda"
             else None,
             "initial_head_selected": best_epoch == 0,
+            "baseline_selected": best_epoch == 0 and mechanism.architecture == "baseline_adapter",
         },
     )
     if best_epoch == 0:
         print(
-            "Validation selected epoch 0: no improvement over the randomly initialized head established.",
+            "Validation selected epoch 0: no improvement over initialization established.",
             flush=True,
         )
     return out

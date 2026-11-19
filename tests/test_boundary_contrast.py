@@ -83,7 +83,7 @@ def test_constrained_pool_reduces_cross_boundary_mixing_and_is_differentiable():
 
 def test_head_shape_gradient_paths_and_no_logit_addition():
     torch.manual_seed(8)
-    c = BoundaryContrastConfig(width=8)
+    c = BoundaryContrastConfig(width=8, architecture="custom_decoder")
     head = BoundaryContrastHead([4, 8, 16], c)
     features = [torch.randn(2, n, h, w) for n, h, w in [(4, 16, 20), (8, 8, 10), (16, 4, 5)]]
     out = head(features, (32, 40))
@@ -111,7 +111,7 @@ def test_head_shape_gradient_paths_and_no_logit_addition():
 
 def test_ablations_and_label_masking():
     torch.manual_seed(3)
-    c = BoundaryContrastConfig(width=8)
+    c = BoundaryContrastConfig(width=8, architecture="custom_decoder")
     head = BoundaryContrastHead([4, 8, 16], c)
     features = [torch.randn(1, n, s, s) for n, s in [(4, 16), (8, 8), (16, 4)]]
     full = head(features, (32, 32))
@@ -194,7 +194,9 @@ def test_train_evaluate_predict_probe_and_checkpoint_binding(tmp_path, monkeypat
         cfg, baseline, BoundaryContrastConfig(width=8), tmp_path / "probe", steps=3
     )
     report = json.loads((probe / "probe.json").read_text())
-    assert report["history"][0]["gradient_norms"]["head.boundary"] > 0
+    assert report["history"][0]["gradient_norms"]["head.alpha"] > 0
+    assert any(r["gradient_norms"]["head.boundary"] > 0 for r in report["history"][1:])
+    assert (out / "identity_check.json").is_file()
     assert baseline.read_bytes() == original
     assert not list(probe.glob("*.pt"))
 
@@ -225,6 +227,15 @@ def test_real_sam2_frozen_encoding_and_reference_equality():
         out, torch.zeros_like(expected), torch.ones_like(expected), model.config
     )["total"].backward()
     assert all(p.grad is None for p in base.parameters())
+    torch.testing.assert_close(out["logits"], expected, atol=1e-6, rtol=1e-6)
+    assert model.head.alpha.grad.abs().sum() > 0
+    optimizer = torch.optim.Adam([p for p in model.parameters() if p.requires_grad], lr=0.001)
+    optimizer.step()
+    optimizer.zero_grad(set_to_none=True)
+    result = model.forward_details(image, include_baseline=False)
+    boundary_contrast_loss(
+        result, torch.zeros_like(expected), torch.ones_like(expected), model.config
+    )["total"].backward()
     assert model.head.boundary.contrast[0].weight.grad.abs().sum() > 0
     model.eval()
     with torch.no_grad():
@@ -234,7 +245,7 @@ def test_real_sam2_frozen_encoding_and_reference_equality():
 
 def test_cpu_bf16_autocast_keeps_sampling_and_backward_finite():
     torch.set_num_threads(2)
-    c = BoundaryContrastConfig(width=8)
+    c = BoundaryContrastConfig(width=8, architecture="custom_decoder")
     head = BoundaryContrastHead([4, 8, 16], c)
     pyramid = [torch.randn(1, n, z, z) for n, z in [(4, 16), (8, 8), (16, 4)]]
     with torch.autocast("cpu", dtype=torch.bfloat16):
@@ -244,3 +255,116 @@ def test_cpu_bf16_autocast_keeps_sampling_and_backward_finite():
     assert torch.isfinite(loss)
     loss.backward()
     assert all(torch.isfinite(p.grad).all() for p in head.parameters() if p.grad is not None)
+
+
+def test_feature_adapter_identity_channels_decoder_reuse_and_no_mask_residual():
+    torch.manual_seed(72)
+    torch.set_num_threads(2)
+    base = Baseline().eval()
+    image = torch.rand(2, 3, 32, 32)
+    with torch.no_grad():
+        reference = base(image)
+    model = BoundaryContrastSAM2(base, BoundaryContrastConfig(width=8)).eval()
+    result = model.forward_details(image)
+    torch.testing.assert_close(result["logits"], reference, atol=0, rtol=0)
+    assert not hasattr(model.head, "decoder")
+    assert model.head.alpha.count_nonzero() == 0
+    features = base.encode(image)["backbone_fpn"]
+    for original, adapted in zip(features, result["adapted_pyramid"]):
+        assert original.shape == adapted.shape
+        torch.testing.assert_close(original, adapted, atol=0, rtol=0)
+    # These are original decoder weights, not a custom output path.
+    with torch.no_grad():
+        model.head.alpha.fill_(0.2)
+    base.sam.sam_mask_decoder.forced_output = 2.0
+    out = model.forward_details(image)
+    torch.testing.assert_close(out["logits"], torch.full_like(out["logits"], 2.0))
+
+
+def test_legacy_checkpoint_is_restored_as_legacy_not_feature_adapter(tmp_path, monkeypatch):
+    train = make_manifest(tmp_path, "train.csv", ["aa"])
+    val = make_manifest(tmp_path, "val.csv", ["bb"])
+    source = tmp_path / "pretrained.pt"
+    source.write_bytes(b"fixture")
+    cfg = Config(
+        ModelConfig(checkpoint=str(source)),
+        DataConfig(str(train), str(val)),
+        TrainingConfig(
+            epochs=1,
+            batch_size=1,
+            num_workers=0,
+            device="cpu",
+            amp=False,
+            output_dir=str(tmp_path / "base"),
+        ),
+    )
+    monkeypatch.setattr(engine, "build_model", lambda cfg, device: Baseline().to(device))
+    checkpoint = engine.train(cfg) / "best.pt"
+    base, _ = engine._restore(cfg, checkpoint)
+    model = BoundaryContrastSAM2(
+        base, BoundaryContrastConfig(width=8, architecture="custom_decoder")
+    )
+    legacy = workflow.artifact(model, cfg, checkpoint, 1, {}, [])
+    assert legacy["kind"] == workflow.LEGACY_KIND
+    del legacy["mechanism"]["architecture"]
+    del legacy["mechanism"]["train_decoder"]
+    path = tmp_path / "legacy.pt"
+    torch.save(legacy, path)
+    restored, _, saved = workflow.build_system(cfg, checkpoint, checkpoint=path)
+    assert saved["mechanism"]["architecture"] == restored.config.architecture == "custom_decoder"
+    assert hasattr(restored.head, "decoder") and not hasattr(restored.head, "alpha")
+
+
+def test_optional_decoder_tuning_keeps_encoder_projections_and_task_tokens_frozen():
+    base = Baseline()
+    c = BoundaryContrastConfig(width=8, train_decoder=True)
+    model = BoundaryContrastSAM2(base, c)
+    assert base.sam.sam_mask_decoder.output.weight.requires_grad
+    assert not base.sam.sam_mask_decoder.conv_s0.weight.requires_grad
+    assert not base.sam.sam_mask_decoder.conv_s1.weight.requires_grad
+    assert not base.task_tokens.requires_grad
+    assert all(not p.requires_grad for p in base.sam.image_encoder.parameters())
+    out = model.forward_details(torch.rand(1, 3, 32, 32), include_baseline=False)
+    boundary_contrast_loss(out, torch.zeros_like(out["logits"]), torch.ones_like(out["logits"]), c)[
+        "total"
+    ].backward()
+    assert base.sam.sam_mask_decoder.output.weight.grad is not None
+
+
+def test_tuned_decoder_evaluation_reference_stays_at_original_baseline():
+    torch.set_num_threads(2)
+    base = Baseline().eval()
+    image = torch.rand(1, 3, 32, 32)
+    with torch.no_grad():
+        original = base(image)
+    model = BoundaryContrastSAM2(base, BoundaryContrastConfig(width=8, train_decoder=True)).eval()
+    with torch.no_grad():
+        base.sam.sam_mask_decoder.output.bias.add_(5)
+        result = model.forward_details(image)
+    torch.testing.assert_close(result["baseline_logits"], original)
+    assert not torch.allclose(result["logits"], original)
+    assert all(not p.requires_grad for p in model.reference_decoder.parameters())
+
+
+def test_feature_adapter_bf16_identity_and_gradients_after_gate_update():
+    torch.set_num_threads(2)
+    torch.manual_seed(104)
+    c = BoundaryContrastConfig(width=8)
+    model = BoundaryContrastSAM2(Baseline(), c)
+    image = torch.rand(1, 3, 32, 32)
+    optimizer = torch.optim.Adam([p for p in model.parameters() if p.requires_grad], lr=0.001)
+    for step in range(2):
+        optimizer.zero_grad(set_to_none=True)
+        with torch.autocast("cpu", dtype=torch.bfloat16):
+            out = model.forward_details(image)
+            if step == 0:
+                torch.testing.assert_close(out["logits"], out["baseline_logits"], atol=0, rtol=0)
+            loss = boundary_contrast_loss(
+                out, torch.zeros_like(out["logits"]), torch.ones_like(out["logits"]), c
+            )["total"]
+        assert torch.isfinite(loss)
+        loss.backward()
+        assert model.head.alpha.grad.abs().sum() > 0
+        assert all(torch.isfinite(p.grad).all() for p in model.parameters() if p.grad is not None)
+        optimizer.step()
+    assert model.head.boundary.contrast[0].weight.grad.abs().sum() > 0

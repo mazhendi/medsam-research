@@ -332,113 +332,96 @@ txt(
 )
 finish("boundary_contrast_module_c")
 
-# Overall graph deliberately only shows module interfaces, not internal wiring.
-start(2200, 1190)
-txt(34, 49, "Directional Boundary Contrast for Polyp Segmentation", 34, anchor="start", bold=True)
-txt(2160, 47, "Implemented prototype · efficacy unvalidated", 22, gray, anchor="end")
+# Corrected overall: baseline decoder retained, three independent feature bypasses.
+start(2200, 1220)
+txt(34, 49, "Baseline-Preserving Boundary Enhancement", 34, anchor="start", bold=True)
+txt(2160, 47, "Corrected implementation · efficacy unvalidated", 22, gray, anchor="end")
+panel(30, 80, 2140, 505, "A | Original trained SAM2 segmentation path", blue, "#fbfcfe")
+box(52, 276, 100, 100, ["Input", "image"], "#f5f5f5", "#999", 25)
+arrow([(152, 326), (200, 326)])
+box(200, 145, 290, 365, ["Existing SAM2.1", "image encoder", "", "Frozen"], "#e6efdb", green, 29)
+frozen(230, 171, green)
+# Three DISTINCT output ports, original SAM decoder-interface channel/grid shapes.
+for idx, y in enumerate((200, 320, 440), 1):
+    arrow([(490, y), (535, y)], green)
+    for k in reversed(range(3)):
+        rect(540 + k * 6, y - 29 - k * 6, 30, 58, "#e6efdb", green, 0, 1)
+    txt(623, y + 7, f"F{idx}", 28, green)
+    arrow([(650, y), (1464, y)], green)
+    # Delta features enter their own sum. Named ports remove long crossing wires.
+    port(1400, y - 84, f"ΔF{idx}", purple, 160)
+    arrow([(1480, y - 52), (1480, y - 16)], purple)
+    circ(1480, y, "+", purple)
+    arrow([(1496, y), (1650, y)], blue)
+    txt(1572, y - 12, f"F{idx}*", 27, blue)
+box(
+    1650,
+    145,
+    305,
+    365,
+    ["Existing trained", "SAM2 mask decoder", "", "Preserved weights", "Frozen by default"],
+    "#e5edf6",
+    blue,
+    29,
+)
+arrow([(1955, 320), (2014, 320)], blue)
+rect(2014, 276, 105, 88, "#111", "#111", 0, 0)
+path("M2041,318 C2033,291 2087,290 2090,319 C2098,349 2041,353 2041,318 Z", "white", 0, "white")
+txt(2066, 410, "Mask*", 25)
+txt(
+    1035,
+    555,
+    "F1/F2: original high-resolution interface; F3: original embedding including no-memory term.",
+    22,
+    gray,
+)
+# Original conditioning remains identical. Separate input arrows below the decoder.
+box(1640, 635, 240, 92, ["Existing learned", "task tokens"], "#e5edf6", blue, 24)
+arrow([(1760, 635), (1760, 510)], blue)
+box(1910, 635, 255, 92, ["Original no-mask", "embedding + PE"], "#e5edf6", blue, 24)
+arrow([(2037, 635), (2037, 550), (1895, 550), (1895, 510)], blue)
 panel(
     30,
-    80,
-    2140,
-    540,
-    "A | Frozen encoding, two boundary-aware modules, direct custom decoding",
-    green,
-    "#fbfcfa",
-)
-box(64, 274, 128, 112, ["Input", "image"], "#f5f5f5", "#999", 26)
-arrow([(192, 330), (234, 330)])
-box(234, 261, 263, 138, ["Frozen SAM2", "image encoder"], "#e6efdb", green, 29)
-frozen(252, 279, green)
-arrow([(497, 330), (538, 330)], green)
-box(538, 261, 265, 138, ["3-scale projection", "Conv1×1 → width 32"], "#edf2e7", green, 25)
-# Boundary branch and coarse prior occupy separate lanes.
-path("M803,330 L845,330 L845,279", teal, 2)
-arrow([(845, 279), (900, 279)], teal)
-box(900, 235, 295, 88, ["B. Inner–Outer", "Contrast Boundary"], "#e8f3f3", teal, 26)
-path("M803,330 L825,330 L825,165", green, 2)
-arrow([(825, 165), (900, 165)], green)
-dot(825, 330, green)
-box(900, 120, 295, 80, ["Coarse head on F3", "Conv1×1 → resize → sigmoid"], "#fcf4e6", gold, 22)
-arrow([(1050, 200), (1050, 235)], gold)
-txt(1086, 226, "p0", 23, gold)
-arrow([(1195, 279), (1315, 279), (1315, 303), (1355, 303)], teal)
-port(1229, 262, "B", teal, 55)
-arrow([(803, 330), (1355, 330)], green)
-box(
-    1355,
-    268,
-    333,
-    140,
-    ["C. Boundary-Constrained", "Cross-Scale Fusion", "F3 → F2 → F1"],
-    "#f0e7f8",
-    purple,
-    25,
-)
-arrow([(1688, 330), (1734, 330)], purple)
-box(
-    1734,
-    261,
-    247,
-    138,
-    ["Custom decoder", "Resize + concat", "Conv-GN-GELU-Conv"],
-    "#f9eded",
-    red,
-    23,
-)
-arrow([(1981, 330), (2026, 330)], red)
-rect(2026, 287, 100, 86, "#111", "#111", 0, 0)
-path("M2053,328 C2045,301 2099,300 2102,329 C2110,359 2053,363 2053,328 Z", "white", 0, "white")
-txt(2076, 416, "Mask*", 24)
-txt(
-    1100,
-    578,
-    "Final prediction uses the custom decoder. The frozen SAM mask decoder is only an evaluation comparator.",
-    24,
-    gray,
-)
-# Compact module summaries point to independent detailed figures.
-panel(30, 650, 1040, 420, "B | Internal structure", teal, "#f7fbfb")
-lines(
-    550,
-    729,
-    [
-        "Parallel local / inner / outer feature paths",
-        "Multi-radius paired contrast: Fs(x−rn) − Fs(x+rn)",
-        "Predicted outward normal: n = −grad(p0) / norm",
-        "Reliability-gated fusion with local fallback",
-    ],
-    26,
+    620,
+    1575,
+    365,
+    "Add-on feature branch",
     teal,
+    "#f7fbfb",
 )
-for k in range(3):
-    shape(267 + k * 200, 891, 95, 80, k)
-txt(550, 1020, "See boundary_contrast_module_b.svg for exact operations", 24, gray)
-panel(1100, 650, 1070, 420, "C | Internal structure", purple, "#faf7fd")
-box(1150, 742, 438, 76, ["Semantic-guided detail D"], "#e8f3f3", teal, 26)
-box(1150, 890, 438, 76, ["Boundary-constrained semantic S"], "#f0e7f8", purple, 25)
-arrow([(1588, 780), (1720, 780), (1720, 848)], purple)
-arrow([(1588, 928), (1720, 928), (1720, 880)], purple)
-circ(1720, 864, "+", purple)
-txt(1643, 763, "g", 24, purple)
-txt(1643, 959, "1−g", 24, purple)
-arrow([(1736, 864), (1852, 864)], purple)
-port(1852, 848, "Fout", purple, 150)
-txt(1635, 1020, "Learned complementary gates; affinity controls cross-boundary mixing", 23, gray)
+port(65, 741, "F1, F2", teal, 130)
+arrow([(195, 757), (250, 757)], teal)
+box(250, 707, 270, 100, ["B. Inner–Outer", "Contrast Boundary", "Module"], "#e8f3f3", teal, 25)
+port(320, 652, "p0", gold, 120)
+arrow([(380, 684), (380, 707)], gold)
+arrow([(520, 757), (600, 757)], teal)
+txt(560, 739, "B", 25, teal)
+box(600, 707, 300, 100, ["C. Boundary-Constrained", "Cross-Scale Fusion"], "#f0e7f8", purple, 24)
+port(625, 652, "F1, F2, F3, p0", green, 250)
+arrow([(750, 684), (750, 707)], green)
+arrow([(900, 757), (950, 757)], purple)
+box(950, 707, 260, 100, ["Per-scale projection", "Pi: width → original Ci"], "#f0e7f8", purple, 23)
+arrow([(1210, 757), (1265, 757)], purple)
+box(1265, 707, 275, 100, ["Per-scale gate αi", "Initialized to ZERO"], "#f0e7f8", purple, 25)
+arrow([(1402, 807), (1402, 856)], purple)
+port(1225, 856, "ΔF1, ΔF2, ΔF3", purple, 355)
+txt(675, 899, "Module B / C internals remain in their separate detailed figures.", 24, gray)
+txt(675, 945, "Only feature deltas are added. There is NO baseline-mask-logit addition.", 23, teal)
+# Local coarse prior: a learned head, never a final mask or a ground-truth prompt.
+port(1805, 781, "F3", green, 100)
+arrow([(1855, 813), (1855, 842)], green)
+box(1640, 842, 520, 74, ["Learned coarse head → resize → sigmoid → p0"], "#fcf4e6", gold, 24)
+txt(1900, 962, "Same-name ports share a tensor; scales are never shorted.", 21, gray)
+panel(30, 1020, 2140, 150, "Identity-preserving feature gate", purple, "#faf7fd")
+txt(650, 1115, "Fi* = Fi + αi · Pi(Ri)", 34, purple)
+txt(1540, 1115, "At αi = 0: Fi* = Fi; initial output = baseline", 28, purple)
 txt(
     34,
-    1122,
-    "Legend: matching named ports share a tensor. All intermediate maps and output masks are schematic.",
-    23,
-    gray,
-    anchor="start",
-)
-txt(
-    34,
-    1163,
-    "Code: boundary_contrast.py   |   Details and ablations: docs/BOUNDARY_CONTRAST.md",
-    23,
+    1203,
+    "*Mask schematic. Original checkpoint, tokens, no-mask embedding and positional encoding are retained.",
+    22,
     gray,
     anchor="start",
 )
 finish("boundary_contrast")
-print("Saved overall and both module diagrams as SVG / PNG / PDF")
+print("Saved baseline-preserving overall and detailed module figures")
