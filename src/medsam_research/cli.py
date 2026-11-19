@@ -57,23 +57,6 @@ def main(argv=None):
         else:
             command.add_argument("--checkpoint", required=True, help="best_region_shape.pt")
             command.add_argument("--manifest", required=True)
-    for name in ("train-boundary-contrast", "probe-boundary-contrast",
-                 "evaluate-boundary-contrast", "predict-boundary-contrast"):
-        command = sub.add_parser(name, help="Directional boundary contrast prototype")
-        command.add_argument("--config", required=True)
-        command.add_argument("--baseline-checkpoint", required=True)
-        command.add_argument("--output", required=True)
-        if name in ("train-boundary-contrast", "probe-boundary-contrast"):
-            command.add_argument("--mechanism-config", required=True)
-            if name == "train-boundary-contrast":
-                command.add_argument("--epochs", type=int, default=None)
-            else:
-                command.add_argument("--steps", type=int, default=100)
-                command.add_argument("--samples", type=int, default=2)
-                command.add_argument("--learning-rate", type=float, default=.001)
-        else:
-            command.add_argument("--checkpoint", required=True)
-            command.add_argument("--manifest", required=True)
     args = parser.parse_args(argv)
     if args.command == "prepare-retina":
         from .retina import prepare_retina
@@ -100,23 +83,6 @@ def main(argv=None):
     from . import engine
 
     cfg = load_config(args.config)
-    if args.command.endswith("-boundary-contrast"):
-        from . import boundary_contrast_training as workflow
-        from .boundary_contrast import load_boundary_config
-
-        if args.command.startswith(("train-", "probe-")):
-            mechanism = load_boundary_config(args.mechanism_config)
-            if args.command.startswith("train-"):
-                workflow.train_boundary_contrast(cfg, args.baseline_checkpoint, mechanism,
-                                                args.output, args.epochs)
-            else:
-                workflow.probe_boundary_contrast(cfg, args.baseline_checkpoint, mechanism,
-                    args.output, args.steps, args.samples, args.learning_rate)
-        else:
-            function = (workflow.evaluate_boundary_contrast if args.command.startswith("evaluate-")
-                        else workflow.predict_boundary_contrast)
-            function(cfg, args.baseline_checkpoint, args.checkpoint, args.manifest, args.output)
-        return
     if args.command in ("train-region-shape", "probe-region-shape", "evaluate-region-shape",
                         "predict-region-shape"):
         from . import region_shape_training as workflow
