@@ -18,3 +18,9 @@ pytest -q
 2026-11-19 增加增强与优化选项后，本地 29 项测试全部通过（含新增 `tests/test_augmentation.py` 与当前环境可执行的真实 SAM2 集成检查），Ruff 和 git diff --check 通过。CLI 保留基线与数据/诊断命令；息肉配置（`polyp.yaml`、`polyp_full.yaml`、`polyp_full_aug.yaml`）路径解析通过。
 
 2026-11-19新增HSNet几何增强模式后，48项测试通过，Ruff与git diff --check通过。新增测试覆盖连续旋转与各翻转组合的图像/标签/FOV像素对齐、无颜色扰动、训练/验证隔离、补边有效性及历史配置独立性。未验证息肉精度提升；没有复现HSNet的352输入、软标签或三尺度训练。
+
+## 区域—轮廓交替推断V3（2026-11-19）
+
+完整测试58项通过，Ruff、git diff --check和pip check通过。新增真实SAM2小输入检查初始化基线等价、batch/逐图一致、query和prompt梯度、冻结编码器，以及可选decoder微调下高分辨率投影梯度；夹具覆盖无logit残差输出、损失/FOV隔离、消融、保存重载、数据绑定和无标注预测。
+
+使用官方SAM2.1 Small权重和随机task-token API基线，在两张Kvasir训练图、一张验证图、1024输入上完成1轮训练、重载评估、无标注预测与2步探针。该次验证选中第0轮，没有建立提升证据；其基线不是用户训练好的息肉基线。未验证4090性能、正式息肉精度、新颖性或原型收敛。详细运行说明见[REGION_SHAPE.md](REGION_SHAPE.md)。

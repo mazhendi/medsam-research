@@ -1,0 +1,40 @@
+{
+  "date": "2026-11-19",
+  "tests_passed": 58,
+  "ruff": "passed",
+  "diff_check": "passed",
+  "pip_check": "passed",
+  "real_sam2_reduced_grid": {
+    "input_size": 64,
+    "checks": [
+      "initial baseline equality",
+      "batch invariance",
+      "query/prompt gradients",
+      "frozen encoder",
+      "optional decoder projection gradients"
+    ]
+  },
+  "official_weights_1024_smoke": {
+    "training_images": 2,
+    "validation_images": 1,
+    "epochs": 1,
+    "probe_steps": 2,
+    "device": "cpu",
+    "trainable_parameters": 217155,
+    "starting_point": "Official SAM2 Small + random task-token API baseline; NOT a trained polyp baseline",
+    "best_epoch": 0,
+    "completed": [
+      "training",
+      "save/reload",
+      "fixed evaluation",
+      "label-free prediction",
+      "training-only probe"
+    ]
+  },
+  "not_verified": [
+    "4090 CUDA BF16/FP16 execution",
+    "polyp efficacy",
+    "novelty",
+    "convergence"
+  ]
+}

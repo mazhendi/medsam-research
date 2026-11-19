@@ -40,6 +40,23 @@ def main(argv=None):
             command.add_argument("--blend", type=float, default=0.5)
             command.add_argument("--thin-width", type=float, default=4.0)
             command.add_argument("--medium-width", type=float, default=8.0)
+    for name in ("train-region-shape", "probe-region-shape", "evaluate-region-shape",
+                 "predict-region-shape"):
+        command = sub.add_parser(name, help="Region–shape co-inference prototype")
+        command.add_argument("--config", required=True, help="Existing baseline/light YAML")
+        command.add_argument("--baseline-checkpoint", required=True, help="Trained baseline best.pt")
+        command.add_argument("--output", required=True, help="New output directory")
+        if name in ("train-region-shape", "probe-region-shape"):
+            command.add_argument("--mechanism-config", required=True)
+            if name == "train-region-shape":
+                command.add_argument("--epochs", type=int, default=None)
+            else:
+                command.add_argument("--steps", type=int, default=100)
+                command.add_argument("--samples", type=int, default=2)
+                command.add_argument("--learning-rate", type=float, default=.001)
+        else:
+            command.add_argument("--checkpoint", required=True, help="best_region_shape.pt")
+            command.add_argument("--manifest", required=True)
     args = parser.parse_args(argv)
     if args.command == "prepare-retina":
         from .retina import prepare_retina
@@ -66,7 +83,24 @@ def main(argv=None):
     from . import engine
 
     cfg = load_config(args.config)
-    if args.command == "diagnose":
+    if args.command in ("train-region-shape", "probe-region-shape", "evaluate-region-shape",
+                        "predict-region-shape"):
+        from . import region_shape_training as workflow
+        from .region_shape import load_mechanism_config
+
+        if args.command in ("train-region-shape", "probe-region-shape"):
+            mechanism = load_mechanism_config(args.mechanism_config)
+            if args.command == "train-region-shape":
+                workflow.train_region_shape(cfg, args.baseline_checkpoint, mechanism,
+                                            args.output, args.epochs)
+            else:
+                workflow.probe_region_shape(cfg, args.baseline_checkpoint, mechanism,
+                    args.output, args.steps, args.samples, args.learning_rate)
+        else:
+            function = (workflow.evaluate_region_shape if args.command == "evaluate-region-shape"
+                        else workflow.predict_region_shape)
+            function(cfg, args.baseline_checkpoint, args.checkpoint, args.manifest, args.output)
+    elif args.command == "diagnose":
         from .diagnostics import diagnose
 
         diagnose(cfg, args.checkpoint, args.manifest, args.output, args.grid, args.overlap,

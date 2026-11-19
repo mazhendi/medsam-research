@@ -105,6 +105,8 @@ def adapter_state(model):
 def load_adapter(model, path, cfg):
     # Only load weights-only checkpoints emitted by this project, not arbitrary pickle objects.
     saved = torch.load(path, map_location="cpu", weights_only=True)
+    if saved.get("kind") is not None:
+        raise ValueError("Not a baseline checkpoint; use the matching mechanism command")
     if saved.get("format_version") != 1 or saved.get("sam2_commit") != SAM2_COMMIT:
         raise ValueError("Unsupported checkpoint format or SAM 2 version")
     if saved["model_config"] != {

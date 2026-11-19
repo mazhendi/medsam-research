@@ -172,4 +172,10 @@ python tools/prepare_polyp_test.py
 
 ## 仓库维护范围
 
-当前main只维护我们自己的SAM 2.1基线、数据工具、诊断与测试。已移除外部论文复现、文本/VLM分支、纠错头、区域监督和额外适配实验。历史代码仍可从Git历史找回。`data/`、`checkpoints/`、`outputs/`不随本次清理删除，也不提交训练权重。已有基线best.pt/last.pt的模型结构和加载格式保持不变。
+当前main维护我们自己的SAM 2.1基线、数据工具、诊断与测试；区域—轮廓原型使用独立命令和权重。已移除外部论文复现、文本/VLM分支、纠错头、区域监督和额外适配实验。历史代码仍可从Git历史找回。`data/`、`checkpoints/`、`outputs/`不随本次清理删除，也不提交训练权重。已有基线best.pt/last.pt的模型结构和加载格式保持不变。
+
+## 区域—轮廓交替推断原型（V3）
+
+新增共享SAM2特征、区域/隐式轮廓双向交互和联合prompt解码，最终不做原预测logits的残差相加。保留当前SAM2＋light基线，默认冻结已有权重，仅训练独立机制；先运行两图拟合探针，再跑1轮检查。
+
+[结构图、损失、运行命令、消融与验证限制](docs/REGION_SHAPE.md)。新配置为`configs/region_shape.yaml`，与`configs/polyp_full_aug.yaml`配合使用。实现和接口检查不代表精度提升或创新已成立。
