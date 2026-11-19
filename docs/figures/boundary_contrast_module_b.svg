@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1640" height="900" viewBox="0 0 1640 900">
+<rect x="0" y="0" width="1640" height="900" rx="0" fill="white" stroke="white" stroke-width="0"/>
+<text x="32" y="46" font-family="Liberation Serif, Times New Roman, serif" font-size="31" font-weight="700" text-anchor="start" fill="#242424">B | Inner–Outer Contrast Boundary Module</text>
+<text x="32" y="83" font-family="Liberation Serif, Times New Roman, serif" font-size="23" font-weight="400" text-anchor="start" fill="#737373">Input Fs = mean[Proj(F1), Upsample(Proj(F2))]; p0 from the learned coarse head.</text>
+<rect x="30" y="111" width="1580" height="626" rx="0" fill="#f7fbfb" stroke="#337e86" stroke-width="1.2" stroke-dasharray="8 6"/>
+<text x="50" y="146" font-family="Liberation Serif, Times New Roman, serif" font-size="27" font-weight="700" text-anchor="start" fill="#337e86">Paired multi-distance sampling with a local fallback</text>
+<rect x="65" y="337" width="92" height="32" rx="4" fill="white" stroke="#337e86" stroke-width="1.3"/>
+<text x="111.0" y="361" font-family="Liberation Serif, Times New Roman, serif" font-size="23" font-weight="400" text-anchor="middle" fill="#337e86">Fs</text>
+<path d="M157,353 L190,353 L190,230" fill="none" stroke="#337e86" stroke-width="2"/>
+<path d="M190,230 L250,230" fill="none" stroke="#337e86" stroke-width="2"/>
+<path d="M250,230 L240.0,226.0 L240.0,234.0 Z" fill="#337e86" stroke="#337e86" stroke-width="0"/>
+<rect x="250" y="187" width="290" height="86" rx="12" fill="#e8f3f3" stroke="#337e86" stroke-width="1.5"/>
+<text x="395.0" y="223.0" font-family="Liberation Serif, Times New Roman, serif" font-size="23" font-weight="400" text-anchor="middle" fill="#242424">DW Conv 3×3 → Conv 1×1</text>
+<text x="395.0" y="253.0" font-family="Liberation Serif, Times New Roman, serif" font-size="23" font-weight="400" text-anchor="middle" fill="#242424">GN → GELU</text>
+<path d="M540,230 L1085,230 L1085,347" fill="none" stroke="#337e86" stroke-width="2"/>
+<path d="M1085,347 L1089.0,337.0 L1081.0,337.0 Z" fill="#337e86" stroke="#337e86" stroke-width="0"/>
+<text x="800" y="215" font-family="Liberation Serif, Times New Roman, serif" font-size="24" font-weight="400" text-anchor="middle" fill="#337e86">Local detail L</text>
+<path d="M190,353 L190,359" fill="none" stroke="#337e86" stroke-width="2"/>
+<circle cx="190" cy="353" r="4" fill="#337e86"/>
+<path d="M190,359 L250,359" fill="none" stroke="#337e86" stroke-width="2"/>
+<path d="M250,359 L240.0,355.0 L240.0,363.0 Z" fill="#337e86" stroke="#337e86" stroke-width="0"/>
+<rect x="250" y="316" width="290" height="86" rx="12" fill="#edf1fa" stroke="#477ba8" stroke-width="1.5"/>
+<text x="395.0" y="351.5" font-family="Liberation Serif, Times New Roman, serif" font-size="24" font-weight="400" text-anchor="middle" fill="#242424">Inner sampling</text>
+<text x="395.0" y="382.5" font-family="Liberation Serif, Times New Roman, serif" font-size="24" font-weight="400" text-anchor="middle" fill="#242424">Fs(x − r n)</text>
+<path d="M190,353 L190,488" fill="none" stroke="#337e86" stroke-width="2"/>
+<path d="M190,488 L250,488" fill="none" stroke="#337e86" stroke-width="2"/>
+<path d="M250,488 L240.0,484.0 L240.0,492.0 Z" fill="#337e86" stroke="#337e86" stroke-width="0"/>
+<rect x="250" y="445" width="290" height="86" rx="12" fill="#f0e7f8" stroke="#8155a6" stroke-width="1.5"/>
+<text x="395.0" y="480.5" font-family="Liberation Serif, Times New Roman, serif" font-size="24" font-weight="400" text-anchor="middle" fill="#242424">Outer sampling</text>
+<text x="395.0" y="511.5" font-family="Liberation Serif, Times New Roman, serif" font-size="24" font-weight="400" text-anchor="middle" fill="#242424">Fs(x + r n)</text>
+<rect x="306" y="268" width="110" height="32" rx="4" fill="white" stroke="#8155a6" stroke-width="1.3"/>
+<text x="361.0" y="292" font-family="Liberation Serif, Times New Roman, serif" font-size="23" font-weight="400" text-anchor="middle" fill="#8155a6">n, r</text>
+<path d="M361,300 L361,316" fill="none" stroke="#8155a6" stroke-width="2"/>
+<path d="M361,316 L365.0,306.0 L357.0,306.0 Z" fill="#8155a6" stroke="#8155a6" stroke-width="0"/>
+<rect x="306" y="412" width="110" height="32" rx="4" fill="white" stroke="#8155a6" stroke-width="1.3"/>
+<text x="361.0" y="436" font-family="Liberation Serif, Times New Roman, serif" font-size="23" font-weight="400" text-anchor="middle" fill="#8155a6">n, r</text>
+<path d="M361,444 L361,445" fill="none" stroke="#8155a6" stroke-width="2"/>
+<path d="M361,445 L365.0,435.0 L357.0,435.0 Z" fill="#8155a6" stroke="#8155a6" stroke-width="0"/>
+<path d="M540,359 L596,359 L596,408 L650,408" fill="none" stroke="#477ba8" stroke-width="2"/>
+<path d="M650,408 L640.0,404.0 L640.0,412.0 Z" fill="#477ba8" stroke="#477ba8" stroke-width="0"/>
+<path d="M540,488 L596,488 L596,438 L650,438" fill="none" stroke="#8155a6" stroke-width="2"/>
+<path d="M650,438 L640.0,434.0 L640.0,442.0 Z" fill="#8155a6" stroke="#8155a6" stroke-width="0"/>
+<rect x="650" y="355" width="330" height="132" rx="12" fill="#f0e7f8" stroke="#8155a6" stroke-width="1.5"/>
+<text x="815.0" y="399.0" font-family="Liberation Serif, Times New Roman, serif" font-size="23" font-weight="400" text-anchor="middle" fill="#242424">Pair difference at r = 1,2,4</text>
+<text x="815.0" y="429.0" font-family="Liberation Serif, Times New Roman, serif" font-size="23" font-weight="400" text-anchor="middle" fill="#242424">Concat differences</text>
+<text x="815.0" y="459.0" font-family="Liberation Serif, Times New Roman, serif" font-size="23" font-weight="400" text-anchor="middle" fill="#242424">Conv 1×1 → GN → GELU</text>
+<path d="M980,423 L1038,423" fill="none" stroke="#8155a6" stroke-width="2"/>
+<path d="M1038,423 L1028.0,419.0 L1028.0,427.0 Z" fill="#8155a6" stroke="#8155a6" stroke-width="0"/>
+<rect x="1038" y="347" width="302" height="154" rx="12" fill="#e8f3f3" stroke="#337e86" stroke-width="1.5"/>
+<text x="1189.0" y="401.0" font-family="Liberation Serif, Times New Roman, serif" font-size="24" font-weight="400" text-anchor="middle" fill="#242424">Reliability-gated fusion</text>
+<text x="1189.0" y="432.0" font-family="Liberation Serif, Times New Roman, serif" font-size="24" font-weight="400" text-anchor="middle" fill="#242424">a = rho · sigmoid(G)</text>
+<text x="1189.0" y="463.0" font-family="Liberation Serif, Times New Roman, serif" font-size="24" font-weight="400" text-anchor="middle" fill="#242424">B = (1−a)L + aC</text>
+<path d="M1340,423 L1430,423" fill="none" stroke="#337e86" stroke-width="2"/>
+<path d="M1430,423 L1420.0,419.0 L1420.0,427.0 Z" fill="#337e86" stroke="#337e86" stroke-width="0"/>
+<rect x="1430" y="407" width="140" height="32" rx="4" fill="white" stroke="#337e86" stroke-width="1.3"/>
+<text x="1500.0" y="431" font-family="Liberation Serif, Times New Roman, serif" font-size="23" font-weight="400" text-anchor="middle" fill="#337e86">Boundary B</text>
+<rect x="65" y="623" width="92" height="32" rx="4" fill="white" stroke="#9e7536" stroke-width="1.3"/>
+<text x="111.0" y="647" font-family="Liberation Serif, Times New Roman, serif" font-size="23" font-weight="400" text-anchor="middle" fill="#9e7536">p0</text>
+<path d="M157,639 L250,639" fill="none" stroke="#9e7536" stroke-width="2"/>
+<path d="M250,639 L240.0,635.0 L240.0,643.0 Z" fill="#9e7536" stroke="#9e7536" stroke-width="0"/>
+<rect x="250" y="592" width="430" height="95" rx="12" fill="#fcf4e6" stroke="#9e7536" stroke-width="1.5"/>
+<text x="465.0" y="632.5" font-family="Liberation Serif, Times New Roman, serif" font-size="23" font-weight="400" text-anchor="middle" fill="#242424">n = −grad(p0) / sqrt(|grad(p0)|² + eps)</text>
+<text x="465.0" y="662.5" font-family="Liberation Serif, Times New Roman, serif" font-size="23" font-weight="400" text-anchor="middle" fill="#242424">rho = gradient strength × valid margin</text>
+<path d="M680,639 L752,639" fill="none" stroke="#9e7536" stroke-width="2"/>
+<path d="M752,639 L742.0,635.0 L742.0,643.0 Z" fill="#9e7536" stroke="#9e7536" stroke-width="0"/>
+<rect x="752" y="623" width="134" height="32" rx="4" fill="white" stroke="#9e7536" stroke-width="1.3"/>
+<text x="819.0" y="647" font-family="Liberation Serif, Times New Roman, serif" font-size="23" font-weight="400" text-anchor="middle" fill="#9e7536">n, rho</text>
+<rect x="1125" y="559" width="92" height="32" rx="4" fill="white" stroke="#9e7536" stroke-width="1.3"/>
+<text x="1171.0" y="583" font-family="Liberation Serif, Times New Roman, serif" font-size="23" font-weight="400" text-anchor="middle" fill="#9e7536">rho</text>
+<path d="M1171,559 L1171,501" fill="none" stroke="#9e7536" stroke-width="2"/>
+<path d="M1171,501 L1167.0,511.0 L1175.0,511.0 Z" fill="#9e7536" stroke="#9e7536" stroke-width="0"/>
+<text x="820" y="789" font-family="Liberation Serif, Times New Roman, serif" font-size="24" font-weight="400" text-anchor="middle" fill="#337e86">Zero directional reliability ⇒ local-only output. Sampling radii are feature-grid pixels.</text>
+<text x="32" y="858" font-family="Liberation Serif, Times New Roman, serif" font-size="22" font-weight="400" text-anchor="start" fill="#737373">All directions come from predicted p0; no ground-truth boundary or normal enters forward().</text>
+</svg>
