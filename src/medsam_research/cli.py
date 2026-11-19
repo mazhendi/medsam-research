@@ -41,7 +41,7 @@ def main(argv=None):
             command.add_argument("--thin-width", type=float, default=4.0)
             command.add_argument("--medium-width", type=float, default=8.0)
     for name in ("train-region-shape", "probe-region-shape", "evaluate-region-shape",
-                 "predict-region-shape"):
+                 "predict-region-shape", "diagnose-region-shape"):
         command = sub.add_parser(name, help="Region–shape co-inference prototype")
         command.add_argument("--config", required=True, help="Existing baseline/light YAML")
         command.add_argument("--baseline-checkpoint", required=True, help="Trained baseline best.pt")
@@ -57,6 +57,8 @@ def main(argv=None):
         else:
             command.add_argument("--checkpoint", required=True, help="best_region_shape.pt")
             command.add_argument("--manifest", required=True)
+            if name == "diagnose-region-shape":
+                command.add_argument("--window-size", type=int, default=8)
     args = parser.parse_args(argv)
     if args.command == "prepare-retina":
         from .retina import prepare_retina
@@ -84,7 +86,7 @@ def main(argv=None):
 
     cfg = load_config(args.config)
     if args.command in ("train-region-shape", "probe-region-shape", "evaluate-region-shape",
-                        "predict-region-shape"):
+                        "predict-region-shape", "diagnose-region-shape"):
         from . import region_shape_training as workflow
         from .region_shape import load_mechanism_config
 
@@ -97,6 +99,11 @@ def main(argv=None):
                 workflow.probe_region_shape(cfg, args.baseline_checkpoint, mechanism,
                     args.output, args.steps, args.samples, args.learning_rate)
         else:
+            if args.command == 'diagnose-region-shape':
+                from .region_shape_diagnostics import diagnose_region_shape
+                print(json.dumps(diagnose_region_shape(cfg, args.baseline_checkpoint,
+                    args.checkpoint, args.manifest, args.output, args.window_size), indent=2))
+                return
             function = (workflow.evaluate_region_shape if args.command == "evaluate-region-shape"
                         else workflow.predict_region_shape)
             function(cfg, args.baseline_checkpoint, args.checkpoint, args.manifest, args.output)

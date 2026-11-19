@@ -38,7 +38,7 @@ def build_system(cfg, baseline_checkpoint, mechanism=None, checkpoint=None):
                                    'mask_threshold': cfg.data.mask_threshold,
                                    'boundary_tolerance': cfg.training.boundary_tolerance}:
             raise ValueError('Evaluation settings differ from training')
-        previous = saved['mechanism']
+        previous = RegionShapeConfig(**saved['mechanism']).validate().to_dict()
         if mechanism is not None and mechanism.to_dict() != previous:
             raise ValueError('Mechanism settings differ from checkpoint')
         mechanism = RegionShapeConfig(**previous).validate()
@@ -107,11 +107,14 @@ def score(model, loader, cfg, device, output=None):
             diagnostic_rows.append({'id': sid, 'weights': weights.tolist(),
                 'weight_entropy': float(-(weights*weights.clamp_min(1e-8).log()).sum()),
                 'mean_disagreement': float(result['variance'][i].mean()),
+                'mean_spatial_weights': result['spatial_weights'][i].mean((-2, -1)).cpu().tolist(),
+                'spatial_weight_std': result['spatial_weights'][i].flatten(1).std(-1, unbiased=False).cpu().tolist(),
                 'hypothesis_foreground': result['occupancy'][i].mean((-2, -1)).cpu().tolist()})
             if output:
                 # Floating-point fields are exported separately from visual PNGs.
                 np.savez_compressed(Path(output)/f'{counter:06d}_states.npz',
                     fields=result['field'][i].float().cpu().numpy(),
+                    spatial_weights=result['spatial_weights'][i].float().cpu().numpy(),
                     occupancy=result['occupancy'][i].float().cpu().numpy(),
                     region_probability=result['probability'][i].float().cpu().numpy(),
                     consensus=result['mean'][i].float().cpu().numpy(),

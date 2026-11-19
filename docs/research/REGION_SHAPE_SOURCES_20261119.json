@@ -1,0 +1,62 @@
+{
+  "date": "2026-11-19",
+  "scope": "Seven full public conference PDFs; MoSE and UM-Net abstract-level evidence is documented separately in the reading note. No third-party PDFs are distributed in this repository.",
+  "papers": [
+    {
+      "name": "probunet2018",
+      "bytes": 1548865,
+      "status": "ok",
+      "url": "https://proceedings.neurips.cc/paper_files/paper/2018/file/473447ac58e1cd7e96172575f48dca3b-Paper.pdf",
+      "sha256": "c9dd6c68756acbd3aa7ecc67b21f3f41eb211511a95dca6c0325e89742d0426f",
+      "read_scope": "official PDF methods and experimental setting"
+    },
+    {
+      "name": "spatialmoe2022",
+      "bytes": 932871,
+      "status": "ok",
+      "url": "https://proceedings.neurips.cc/paper_files/paper/2022/file/4c5e2bcbf21bdf40d75fddad0bd43dc9-Paper-Conference.pdf",
+      "sha256": "6381fd7aa5c624ee5703798a8788c791e060da1bc115e759c8c2c82099a43163",
+      "read_scope": "official PDF methods and experimental setting"
+    },
+    {
+      "name": "pointrend2020",
+      "bytes": 6905080,
+      "status": "ok",
+      "url": "https://openaccess.thecvf.com/content_CVPR_2020/papers/Kirillov_PointRend_Image_Segmentation_As_Rendering_CVPR_2020_paper.pdf",
+      "sha256": "1c534b9d5dcef9fdf0e6318fb593cede34b769c84763f363c33aa3adb754e8e5",
+      "read_scope": "official PDF methods and experimental setting"
+    },
+    {
+      "name": "tyche2024",
+      "bytes": 4858819,
+      "status": "ok",
+      "url": "https://openaccess.thecvf.com/content/CVPR2024/papers/Rakic_Tyche_Stochastic_In-Context_Learning_for_Medical_Image_Segmentation_CVPR_2024_paper.pdf",
+      "sha256": "df317631760952956983004611c505c21e31e25bb7223b0bcfd1a6415d18c9f2",
+      "read_scope": "official PDF methods and experimental setting"
+    },
+    {
+      "name": "spa2025",
+      "bytes": 5126197,
+      "status": "ok",
+      "url": "https://openaccess.thecvf.com/content/ICCV2025/papers/Zhu_SPA_Efficient_User-Preference_Alignment_against_Uncertainty_in_Medical_Image_Segmentation_ICCV_2025_paper.pdf",
+      "sha256": "3b9fec26e3652a21a0caff68accae54112a76f51cfca8ee3023f2bae998f7261",
+      "read_scope": "official PDF methods and experimental setting"
+    },
+    {
+      "name": "delving2026",
+      "bytes": 2880783,
+      "status": "ok",
+      "url": "https://openaccess.thecvf.com/content/CVPR2026/papers/Li_Delving_Aleatoric_Uncertainty_in_Medical_Image_Segmentation_via_Vision_Foundation_CVPR_2026_paper.pdf",
+      "sha256": "f3d2b5cf4143471fdd022770c976053eb852c7aa3179cc3b89812a190b054398",
+      "read_scope": "official PDF methods and experimental setting"
+    },
+    {
+      "name": "ambissl2025",
+      "status": "ok",
+      "url": "https://openaccess.thecvf.com/content/CVPR2025/papers/Kumari_Annotation_Ambiguity_Aware_Semi-Supervised_Medical_Image_Segmentation_CVPR_2025_paper.pdf",
+      "sha256": "c64df5fd375d10225b5e78ec2244c03aa5475e75320869255c607c32cd593ab5",
+      "bytes": 2229898,
+      "read_scope": "official PDF methods and experimental setting"
+    }
+  ]
+}

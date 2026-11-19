@@ -35,6 +35,9 @@ class RegionShapeConfig:
     diversity_margin: float = .05
     train_decoder: bool = False
     mode: str = 'full'
+    routing: str = 'global'
+    window_size: int = 8
+    local_strength: float = .5
 
     def validate(self):
         for name in ('width', 'heads', 'hypotheses', 'rounds', 'grid_size'):
@@ -52,6 +55,14 @@ class RegionShapeConfig:
                 raise ValueError(f'{name} must be finite and nonnegative')
         if type(self.train_decoder) is not bool or self.mode not in MODES:
             raise ValueError('Invalid train_decoder or mode')
+        if self.routing not in ('global', 'window'):
+            raise ValueError('routing must be global or window')
+        if type(self.window_size) is not int or self.window_size < 1:
+            raise ValueError('window_size must be a positive integer')
+        if self.routing == 'window' and self.grid_size % self.window_size:
+            raise ValueError('grid_size must be divisible by window_size for window routing')
+        if not np.isfinite(self.local_strength) or not 0 <= self.local_strength <= 1:
+            raise ValueError('local_strength must be finite and in [0,1]')
         return self
 
     def to_dict(self):
@@ -67,9 +78,15 @@ def load_mechanism_config(path):
 
 
 def weighted_hypotheses(occupancy, weights):
-    """Per-sample, permutation-invariant moments; weights are probabilities."""
-    mean = (weights[:, :, None, None]*occupancy).sum(1, keepdim=True)
-    variance = (weights[:, :, None, None]*(occupancy-mean).square()).sum(1, keepdim=True)
+    """Moments of either global BxK or spatial BxKxHxW probability weights."""
+    if weights.ndim == 2:
+        if weights.shape != occupancy.shape[:2]:
+            raise ValueError('Global weight dimensions disagree with occupancies')
+        weights = weights[:, :, None, None]
+    elif weights.shape != occupancy.shape:
+        raise ValueError('Spatial weight dimensions disagree with occupancies')
+    mean = (weights*occupancy).sum(1, keepdim=True)
+    variance = (weights*(occupancy-mean).square()).sum(1, keepdim=True)
     return mean, variance
 
 
@@ -94,7 +111,7 @@ class RegionShapeHead(nn.Module):
         self.region_update = nn.Sequential(nn.Conv2d(w+3, w, 3, padding=1),
                                             nn.GroupNorm(1, w), nn.GELU(), nn.Conv2d(w, 1, 1))
 
-    def competition(self, feature, probability, queries, occupancy):
+    def competition(self, feature, probability, queries, occupancy, return_spatial=False):
         b, k, height, width = occupancy.shape
         flat, f = occupancy.flatten(2), feature.flatten(2)
         inner = torch.einsum('bkn,bcn->bkc', flat, f)/flat.sum(-1, keepdim=True).clamp_min(1e-6)
@@ -110,8 +127,51 @@ class RegionShapeHead(nn.Module):
         weights = torch.softmax(-energy, dim=1)
         if self.config.mode == 'uniform_competition':
             weights = torch.ones_like(weights)/k
-        mean, variance = weighted_hypotheses(occupancy, weights)
-        return weights, mean, variance, energy
+        spatial = weights[:, :, None, None].expand_as(occupancy)
+        if (self.config.routing == 'window' and self.config.local_strength > 0
+                and self.config.mode != 'uniform_competition'):
+            spatial = self.window_routing(feature, probability, queries, occupancy, energy)
+            mean, variance = weighted_hypotheses(occupancy, spatial)
+        else:
+            mean, variance = weighted_hypotheses(occupancy, weights)
+        result = (weights, mean, variance, energy)
+        return (*result, spatial) if return_spatial else result
+
+    def window_routing(self, feature, probability, queries, occupancy, global_energy):
+        """Share the original scoring MLP; only aggregation granularity changes.
+
+        Convex energy blend anchors local choices to global compatibility. Routing
+        is dense, soft and computed on windows, not sparse expert execution.
+        """
+        c = self.config
+        b, k, height, width = occupancy.shape
+        ws = c.window_size
+        if height % ws or width % ws:
+            raise ValueError('Occupancy grid must divide into routing windows')
+        gh, gw = height//ws, width//ws
+
+        def windows(tensor):
+            channels = tensor.shape[1]
+            return tensor.float().reshape(b, channels, gh, ws, gw, ws).permute(
+                0, 2, 4, 1, 3, 5).reshape(b, gh*gw, channels, ws*ws)
+
+        h, f = windows(occupancy), windows(feature)
+        p = windows(probability).clamp(1e-5, 1-1e-5)
+        inner = torch.einsum('bwkn,bwcn->bwkc', h, f)/h.sum(-1, keepdim=True).clamp_min(1e-6)
+        outer = torch.einsum('bwkn,bwcn->bwkc', 1-h, f)/(1-h).sum(-1, keepdim=True).clamp_min(1e-6)
+        disagreement = -(h*p.log()+(1-h)*(1-p).log()).mean(-1)
+        area = h.mean(-1)
+        q = queries[:, None].expand(-1, gh*gw, -1, -1)
+        descriptor = torch.cat((q, inner, outer, inner-outer,
+                                disagreement[..., None], area[..., None]), -1)
+        local_energy = disagreement+.1*self.compatibility(descriptor).squeeze(-1).float()
+        energy = ((1-c.local_strength)*global_energy[:, None]
+                  +c.local_strength*local_energy)
+        weights = energy.neg().softmax(-1).transpose(1, 2).reshape(b, k, gh, gw)
+        weights = F.interpolate(weights, (height, width), mode='bilinear', align_corners=False)
+        # Interpolation of probability simplices preserves positivity. Normalize
+        # again only for roundoff; no test labels or best-candidate choices here.
+        return weights/weights.sum(1, keepdim=True).clamp_min(1e-8)
 
     def forward(self, pyramid, initial_logits):
         c = self.config
@@ -136,21 +196,23 @@ class RegionShapeHead(nn.Module):
                                   self.field_spatial(feature))/(c.width**.5)
             field = torch.tanh(field+self.field_bias(queries)[..., None])
             occupancy = torch.sigmoid(-field.float()/c.temperature)
-            weights, mean, variance, energy = self.competition(feature, probability, queries, occupancy)
+            weights, mean, variance, energy, spatial = self.competition(
+                feature, probability, queries, occupancy, return_spatial=True)
             if c.mode == 'region_only':
                 mean, variance = probability, torch.zeros_like(probability)
             if c.mode != 'no_exchange':
                 region = self.region_update(torch.cat((feature, probability, mean, variance), 1)).float()
             history.append({'region': region, 'field': field.float(), 'occupancy': occupancy,
-                            'weights': weights, 'mean': mean, 'variance': variance, 'energy': energy})
+                            'weights': weights, 'spatial_weights': spatial, 'mean': mean, 'variance': variance, 'energy': energy})
         # Recompute compatibility against the FINAL regional state (not stale p_t).
         probability = region.sigmoid()
-        weights, mean, variance, energy = self.competition(feature, probability, queries, occupancy)
+        weights, mean, variance, energy, spatial = self.competition(
+                feature, probability, queries, occupancy, return_spatial=True)
         if c.mode == 'region_only':
             mean, variance = probability, torch.zeros_like(probability)
         return {'region': region, 'probability': probability, 'queries': queries,
                 'field': field.float(), 'occupancy': occupancy, 'weights': weights,
-                'mean': mean, 'variance': variance, 'energy': energy, 'history': history}
+                'spatial_weights': spatial, 'mean': mean, 'variance': variance, 'energy': energy, 'history': history}
 
 
 class RegionShapeSAM2(nn.Module):
