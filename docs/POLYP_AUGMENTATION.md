@@ -35,12 +35,14 @@ HSNet该版本Train.py默认augmentation是布尔True，而加载器比较字符
 
 ```bash
 git pull
-medsam train --config configs/polyp_full_hsnet.yaml
+medsam train --config configs/polyp_full_aug.yaml
 ```
 
 - `polyp_full.yaml`：无增强对照。
-- `polyp_full_aug.yaml`：原light增强，保留用于复现实验；仍有亮度/对比度与直角旋转。
-- `polyp_full_hsnet.yaml`：当前推荐的HSNet几何增强配置，独立保存至`outputs/polyp_baseline_full_hsnet_seed42/`。
+- `polyp_full_aug.yaml`：**当前采用的 light 增强**（翻转、90° 倍数旋转、亮度/对比度 ±10%），独立保存至 `outputs/polyp_baseline_full_aug_seed42/`。
+- `polyp_full_hsnet.yaml`：按 HSNet 启用分支设置的几何增强（连续 ±90° 旋转＋翻转、无颜色扰动），保留用于协议对照，独立保存至 `outputs/polyp_baseline_full_hsnet_seed42/`。
+
+选择 light 的依据（本机单 seed、单划分、五组测试集 Dice 宏平均）：light 0.7987，HSNet 几何 0.7880，无增强 0.7597。light 的优势集中在 CVC-300 与 ETIS，这两组对颜色/光照变化最敏感；HSNet 几何在 ClinicDB 上略好。该结果只作为当前工程选择，不构成对论文协议或增强方法的结论；换划分或更多 seed 时需重新确认。
 
 三组共用原有训练/验证清单与其余超参，不改划分、不覆盖历史结果。验证、测试和推理不增强，不使用TTA；不要把已有light结果改名当作hsnet结果。归档记录包含模式、参考版本、角度、概率、插值及输入尺寸。
 

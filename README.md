@@ -9,7 +9,7 @@
 - 这是可运行的**基线**，不将其本身声称为新方法。已用于视网膜实验，当前也用于息肉分割；不同任务的权重和输出需独立保存。
 - 第一版为单任务训练；输入为 8-bit RGB/灰度图像，目标为单通道二值掩码。DICOM、16-bit X-ray、多类别标签需先明确转换规则。
 - 使用官方默认 1024×1024 输入，直接方形缩放；采用 ImageNet 均值/标准差归一化。标签最近邻缩放；评估先将 logits 恢复到原图尺寸，再以固定阈值二值化。
-- 增强模式默认`none`；息肉推荐`hsnet`（连续±90°旋转、上下/左右翻转，无颜色扰动）。原`light`保留作历史对照。只在训练集增强，图像/标签/FOV同步几何变换；详细依据见[增强说明](docs/POLYP_AUGMENTATION.md)。
+- 增强模式默认`none`；息肉当前采用`light`（翻转、90° 倍数旋转、亮度/对比度 ±10%），`hsnet`（连续±90°旋转、翻转、无颜色扰动）保留作协议对照。只在训练集增强，图像/标签/FOV同步变换；详细依据与选择记录见[增强说明](docs/POLYP_AUGMENTATION.md)。
 
 ## 1. 安装（Linux / RTX 4090）
 
@@ -158,8 +158,8 @@ python tools/prepare_polyp_test.py
 ```
 
 - `configs/polyp_full.yaml`：1305 train / 145 val，无增强
-- `configs/polyp_full_aug.yaml`：原light对照，保留历史设置
-- `configs/polyp_full_hsnet.yaml`：按HSNet启用分支设置连续±90°旋转＋上下/左右翻转，无颜色扰动；详见[增强依据与差异](docs/POLYP_AUGMENTATION.md)
+- `configs/polyp_full_aug.yaml`：**当前采用的 light 增强**（翻转、90° 倍数旋转、亮度/对比度 ±10%）
+- `configs/polyp_full_hsnet.yaml`：按HSNet启用分支设置连续±90°旋转＋上下/左右翻转，无颜色扰动，保留作协议对照；详见[增强依据与差异](docs/POLYP_AUGMENTATION.md)
 - `tools/predict_probs.py`：输出原图分辨率概率图（HSNet 指标的必要输入）
 - `tools/eval_hsnet_metrics.py`：调用 HSNet 作者的 `eval_functions.py` 计算 Dice/IoU/Sm/Em/加权 F（256 阈值）
 - `tools/eval_hd95.py`：0.5 阈值边界对称距离的 95 分位
