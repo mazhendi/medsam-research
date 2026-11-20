@@ -15,6 +15,7 @@ from torch import nn
 from torch.nn import functional as F
 
 from .metrics import segmentation_loss
+from .multiscale_refinement import MultiScaleRefinement
 from .scale_detail import AdaptiveScaleSelection, RegionDetailRetrieval
 
 MODES = ('full', 'no_exchange', 'uniform_competition', 'region_only')
@@ -36,6 +37,10 @@ class RegionShapeConfig:
     diversity_margin: float = .05
     train_decoder: bool = False
     mode: str = 'full'
+    multiscale_refinement: bool = False
+    refinement_width: int = 32
+    refinement_window: int = 3
+    refinement_only: bool = False
     scale_selection: bool = False
     detail_retrieval: bool = False
     detail_window: int = 5
@@ -74,6 +79,17 @@ class RegionShapeConfig:
             raise ValueError('detail_window must be a positive odd integer')
         if not np.isfinite(self.detail_bias) or self.detail_bias < 0:
             raise ValueError('detail_bias must be finite and nonnegative')
+        if type(self.multiscale_refinement) is not bool or type(self.refinement_only) is not bool:
+            raise ValueError('Refinement switches must be boolean')
+        if type(self.refinement_width) is not int or self.refinement_width < 1:
+            raise ValueError('refinement_width must be positive')
+        if (type(self.refinement_window) is not int or self.refinement_window < 1
+                or self.refinement_window % 2 == 0):
+            raise ValueError('refinement_window must be a positive odd integer')
+        if self.multiscale_refinement and (self.scale_selection or self.detail_retrieval):
+            raise ValueError('New multiscale B cannot be combined with legacy scale/detail modules')
+        if self.refinement_only and (not self.multiscale_refinement or self.train_decoder):
+            raise ValueError('refinement_only requires B and a frozen decoder')
         return self
 
     def to_dict(self):
@@ -241,6 +257,8 @@ class RegionShapeSAM2(nn.Module):
         dim = baseline.sam.sam_prompt_encoder.embed_dim
         channels = [decoder.conv_s0.out_channels, decoder.conv_s1.out_channels, dim]
         self.head = RegionShapeHead(channels, c)
+        if c.multiscale_refinement:
+            self.refinement = MultiScaleRefinement(channels, c.refinement_width, c.refinement_window)
         if c.scale_selection:
             self.scale_module = AdaptiveScaleSelection(dim, c.width)
         if c.detail_retrieval:
@@ -256,6 +274,9 @@ class RegionShapeSAM2(nn.Module):
         with torch.no_grad():
             self.dense_prompt[-1].bias.copy_(baseline.sam.sam_prompt_encoder.no_mask_embed.weight[0])
         nn.init.zeros_(self.sparse_prompt.weight)
+        if c.refinement_only:
+            self.requires_grad_(False)
+            self.refinement.requires_grad_(True)
         self.train()
 
     def train(self, mode=True):
@@ -264,12 +285,19 @@ class RegionShapeSAM2(nn.Module):
             self.baseline.train(mode)
         else:
             self.baseline.eval()
+        if self.config.refinement_only:
+            for name in ('head', 'dense_prompt', 'sparse_prompt', 'task_query'):
+                getattr(self, name).eval()
         return self
 
     def forward_details(self, images):
         # One image encoder call, one initial decoder call, one final decoder call.
         with torch.set_grad_enabled(self.training and self.config.train_decoder):
             initial, pyramid = self.baseline.forward_with_pyramid(images)
+        # Initial prediction uses original features. Both C and final decoding
+        # receive B outputs; there is no raw-feature bypass to the final decoder.
+        if self.config.multiscale_refinement:
+            pyramid = self.refinement(pyramid)
         state = self.head(pyramid, initial)
         cues = torch.cat((state['probability'], state['mean'], state['variance']), 1)
         dense = self.dense_prompt(cues)

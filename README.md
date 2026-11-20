@@ -193,3 +193,11 @@ python tools/prepare_polyp_test.py
 Optional B/C modules preserve the existing region-shape prompt path and SAM decoder.
 See [implementation, warm start and ablations](docs/SCALE_DETAIL.md).
 Old configurations remain unchanged; no accuracy gain has been established.
+
+### Coarse-to-fine B + existing RS (current proposed architecture)
+
+Use `configs/region_shape_multiscale_b.yaml` with `--initialize-from` pointing to
+a trained original RS artifact. Stage one trains only B. The enhanced pyramid
+feeds both C and final SAM decoding; all three resolutions are preserved.
+See [architecture, training and checkpoint details](docs/MULTISCALE_B.md).
+The older scale-detail experiment is a separate optional configuration.

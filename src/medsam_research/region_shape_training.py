@@ -27,6 +27,20 @@ def read_artifact(path):
     return saved
 
 
+def mechanism_state_names(model):
+    # Frozen RS parameters must be saved too when only B is optimized.
+    return {name for name, p in model.named_parameters()
+            if (not name.startswith('baseline.') or p.requires_grad
+                or (model.config.multiscale_refinement
+                    and name.startswith('baseline.sam.sam_mask_decoder.')))}
+
+
+def mechanism_state(model):
+    names = mechanism_state_names(model)
+    return {name: p.detach().cpu().clone() for name, p in model.named_parameters()
+            if name in names}
+
+
 def build_system(cfg, baseline_checkpoint, mechanism=None, checkpoint=None):
     if not Path(baseline_checkpoint).is_file():
         raise FileNotFoundError(baseline_checkpoint)
@@ -47,7 +61,7 @@ def build_system(cfg, baseline_checkpoint, mechanism=None, checkpoint=None):
     baseline, device = engine._restore(cfg, baseline_checkpoint)
     model = RegionShapeSAM2(baseline, mechanism).to(device)
     if saved:
-        expected = {name for name, p in model.named_parameters() if p.requires_grad}
+        expected = mechanism_state_names(model)
         if set(saved['adapter']) != expected:
             raise ValueError('Unexpected or missing mechanism/decoder parameters')
         # Shape errors raise in load_state_dict; missing frozen base parameters
@@ -61,10 +75,12 @@ def initialize_feature_extension(model, cfg, baseline_checkpoint, checkpoint):
     previous, _, _ = build_system(cfg, baseline_checkpoint, checkpoint=checkpoint)
     old = previous.config.to_dict()
     new = model.config.to_dict()
-    switches = {'scale_selection', 'detail_retrieval', 'detail_window', 'detail_bias'}
+    switches = {'scale_selection', 'detail_retrieval', 'detail_window', 'detail_bias',
+                'multiscale_refinement', 'refinement_width', 'refinement_window',
+                'refinement_only', 'train_decoder'}
     if any(old[k] != new[k] for k in old.keys()-switches):
         raise ValueError('Warm start must preserve the original region-shape settings')
-    if old['scale_selection'] or old['detail_retrieval']:
+    if old['scale_selection'] or old['detail_retrieval'] or old['multiscale_refinement']:
         raise ValueError('Warm start expects region-shape without feature modules')
     model.load_state_dict(previous.state_dict(), strict=False)
 
@@ -72,7 +88,7 @@ def initialize_feature_extension(model, cfg, baseline_checkpoint, checkpoint):
 def artifact(model, cfg, baseline_checkpoint, epoch, scores, source_audit):
     return {'kind': KIND, 'format_version': 1, 'sam2_commit': SAM2_COMMIT,
             'baseline_sha256': file_hash(baseline_checkpoint),
-            'mechanism': model.config.to_dict(), 'adapter': engine.adapter_state(model),
+            'mechanism': model.config.to_dict(), 'adapter': mechanism_state(model),
             'epoch': epoch, 'validation': scores, 'source_config': cfg.to_dict(), 'source_audit': source_audit,
             'evaluation': {'threshold': cfg.training.threshold,
                            'mask_threshold': cfg.data.mask_threshold,
@@ -167,7 +183,7 @@ def update(model, batch, device, optimizer, scaler, enabled, dtype):
     scaler.unscale_(optimizer)
     gradients = {}
     for name in ('head', 'dense_prompt', 'sparse_prompt', 'task_query',
-                 'scale_module', 'detail_module'):
+                 'scale_module', 'detail_module', 'refinement'):
         if not hasattr(model, name):
             continue
         grad = [p.grad.detach().float().square().sum() for p in getattr(model, name).parameters()
@@ -191,6 +207,8 @@ def train_region_shape(cfg, baseline_checkpoint, mechanism, output, epochs=None,
     engine.set_seed(cfg.training.seed)
     audit = audit_manifests([cfg.data.train_manifest, cfg.data.val_manifest], cfg.data.mask_threshold)
     model, device, _ = build_system(cfg, baseline_checkpoint, mechanism)
+    if mechanism.refinement_only and not initialize_from:
+        raise ValueError('B-only training requires --initialize-from with trained RS weights')
     if initialize_from:
         initialize_feature_extension(model, cfg, baseline_checkpoint, initialize_from)
     training = engine.make_loader(read_manifest(cfg.data.train_manifest), model.image_size, cfg,

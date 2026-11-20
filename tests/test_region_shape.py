@@ -240,6 +240,17 @@ def test_training_roundtrip_bound_checkpoint_and_probe(tmp_path, monkeypatch):
     assert report['history'][0]['gradient_norms']['head'] > 0
     assert not list(probe.glob('*.pt'))
     assert baseline.read_bytes() == original
+    stage_config = replace(settings(), multiscale_refinement=True,
+                           refinement_only=True, refinement_width=4)
+    with pytest.raises(ValueError, match='initialize-from'):
+        workflow.train_region_shape(cfg, baseline, stage_config, tmp_path/'missing_init', epochs=1)
+    stage = workflow.train_region_shape(cfg, baseline, stage_config, tmp_path/'stage', epochs=1,
+                                       initialize_from=out/'last_region_shape.pt')
+    stage_model, _, _ = workflow.build_system(cfg, baseline, checkpoint=stage/'last_region_shape.pt')
+    assert all(p.requires_grad == name.startswith('refinement.')
+               for name, p in stage_model.named_parameters())
+    assert workflow.evaluate_region_shape(cfg, baseline, stage/'last_region_shape.pt', test,
+        tmp_path/'stage_evaluation')['region_shape']['samples'] == 1
     record = workflow.read_manifest(train)[0]
     with workflow.Image.open(record.mask) as image:
         array = np.array(image, copy=True)
