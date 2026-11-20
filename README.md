@@ -187,3 +187,9 @@ python tools/prepare_polyp_test.py
 新增共享SAM2特征、区域/隐式轮廓双向交互和联合prompt解码，最终不做原预测logits的残差相加。保留当前SAM2＋light基线，默认冻结已有权重，仅训练独立机制；先运行两图拟合探针，再跑1轮检查。
 
 [结构图、损失、运行命令、消融与验证限制](docs/REGION_SHAPE.md)。新配置为`configs/region_shape.yaml`，与`configs/polyp_full_aug.yaml`配合使用。实现和接口检查不代表精度提升或创新已成立。
+
+### Experimental scale/detail feature modules
+
+Optional B/C modules preserve the existing region-shape prompt path and SAM decoder.
+See [implementation, warm start and ablations](docs/SCALE_DETAIL.md).
+Old configurations remain unchanged; no accuracy gain has been established.

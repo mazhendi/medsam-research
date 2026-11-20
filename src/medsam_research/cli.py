@@ -50,6 +50,7 @@ def main(argv=None):
             command.add_argument("--mechanism-config", required=True)
             if name == "train-region-shape":
                 command.add_argument("--epochs", type=int, default=None)
+                command.add_argument("--initialize-from", help="Existing region-shape checkpoint")
             else:
                 command.add_argument("--steps", type=int, default=100)
                 command.add_argument("--samples", type=int, default=2)
@@ -94,7 +95,7 @@ def main(argv=None):
             mechanism = load_mechanism_config(args.mechanism_config)
             if args.command == "train-region-shape":
                 workflow.train_region_shape(cfg, args.baseline_checkpoint, mechanism,
-                                            args.output, args.epochs)
+                                            args.output, args.epochs, initialize_from=args.initialize_from)
             else:
                 workflow.probe_region_shape(cfg, args.baseline_checkpoint, mechanism,
                     args.output, args.steps, args.samples, args.learning_rate)

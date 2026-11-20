@@ -56,6 +56,19 @@ def build_system(cfg, baseline_checkpoint, mechanism=None, checkpoint=None):
     return model, device, saved
 
 
+def initialize_feature_extension(model, cfg, baseline_checkpoint, checkpoint):
+    """Load the complete old mechanism; only new feature-module keys may be absent."""
+    previous, _, _ = build_system(cfg, baseline_checkpoint, checkpoint=checkpoint)
+    old = previous.config.to_dict()
+    new = model.config.to_dict()
+    switches = {'scale_selection', 'detail_retrieval', 'detail_window', 'detail_bias'}
+    if any(old[k] != new[k] for k in old.keys()-switches):
+        raise ValueError('Warm start must preserve the original region-shape settings')
+    if old['scale_selection'] or old['detail_retrieval']:
+        raise ValueError('Warm start expects region-shape without feature modules')
+    model.load_state_dict(previous.state_dict(), strict=False)
+
+
 def artifact(model, cfg, baseline_checkpoint, epoch, scores, source_audit):
     return {'kind': KIND, 'format_version': 1, 'sam2_commit': SAM2_COMMIT,
             'baseline_sha256': file_hash(baseline_checkpoint),
@@ -153,7 +166,10 @@ def update(model, batch, device, optimizer, scaler, enabled, dtype):
     scaler.scale(losses['total']).backward()
     scaler.unscale_(optimizer)
     gradients = {}
-    for name in ('head', 'dense_prompt', 'sparse_prompt', 'task_query'):
+    for name in ('head', 'dense_prompt', 'sparse_prompt', 'task_query',
+                 'scale_module', 'detail_module'):
+        if not hasattr(model, name):
+            continue
         grad = [p.grad.detach().float().square().sum() for p in getattr(model, name).parameters()
                 if p.grad is not None]
         gradients[name] = float(torch.stack(grad).sum().sqrt()) if grad else 0.
@@ -164,7 +180,8 @@ def update(model, batch, device, optimizer, scaler, enabled, dtype):
     return {name: value.detach().item() for name, value in losses.items()}, gradients
 
 
-def train_region_shape(cfg, baseline_checkpoint, mechanism, output, epochs=None):
+def train_region_shape(cfg, baseline_checkpoint, mechanism, output, epochs=None,
+                       initialize_from=None):
     out = Path(output)
     if out.exists():
         raise FileExistsError(out)
@@ -174,6 +191,8 @@ def train_region_shape(cfg, baseline_checkpoint, mechanism, output, epochs=None)
     engine.set_seed(cfg.training.seed)
     audit = audit_manifests([cfg.data.train_manifest, cfg.data.val_manifest], cfg.data.mask_threshold)
     model, device, _ = build_system(cfg, baseline_checkpoint, mechanism)
+    if initialize_from:
+        initialize_feature_extension(model, cfg, baseline_checkpoint, initialize_from)
     training = engine.make_loader(read_manifest(cfg.data.train_manifest), model.image_size, cfg,
                                   True, augment=cfg.training.augmentation != 'none')
     validation = engine.make_loader(read_manifest(cfg.data.val_manifest), model.image_size, cfg)
@@ -191,6 +210,7 @@ def train_region_shape(cfg, baseline_checkpoint, mechanism, output, epochs=None)
         'project_dirty': engine.git_dirty(), 'source_config': cfg.to_dict(),
         'mechanism': mechanism.to_dict(), 'baseline_sha256': file_hash(baseline_checkpoint),
         'pretrained_sha256': file_hash(cfg.model.checkpoint), 'data_audit': audit,
+        'initialize_from_sha256': file_hash(initialize_from) if initialize_from else None,
         'versions': versions, 'epochs': epochs, 'training_precision': str(dtype) if enabled else 'float32',
         'trainable_parameters': sum(p.numel() for p in model.parameters() if p.requires_grad),
         'encoder_passes_per_image': 1, 'decoder_passes_per_image': 2,

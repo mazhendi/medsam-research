@@ -15,6 +15,7 @@ from torch import nn
 from torch.nn import functional as F
 
 from .metrics import segmentation_loss
+from .scale_detail import AdaptiveScaleSelection, RegionDetailRetrieval
 
 MODES = ('full', 'no_exchange', 'uniform_competition', 'region_only')
 
@@ -35,6 +36,10 @@ class RegionShapeConfig:
     diversity_margin: float = .05
     train_decoder: bool = False
     mode: str = 'full'
+    scale_selection: bool = False
+    detail_retrieval: bool = False
+    detail_window: int = 5
+    detail_bias: float = 1.
     routing: str = 'global'
     window_size: int = 8
     local_strength: float = .5
@@ -63,6 +68,12 @@ class RegionShapeConfig:
             raise ValueError('grid_size must be divisible by window_size for window routing')
         if not np.isfinite(self.local_strength) or not 0 <= self.local_strength <= 1:
             raise ValueError('local_strength must be finite and in [0,1]')
+        if type(self.scale_selection) is not bool or type(self.detail_retrieval) is not bool:
+            raise ValueError('Feature module switches must be boolean')
+        if type(self.detail_window) is not int or self.detail_window < 1 or self.detail_window % 2 == 0:
+            raise ValueError('detail_window must be a positive odd integer')
+        if not np.isfinite(self.detail_bias) or self.detail_bias < 0:
+            raise ValueError('detail_bias must be finite and nonnegative')
         return self
 
     def to_dict(self):
@@ -230,6 +241,11 @@ class RegionShapeSAM2(nn.Module):
         dim = baseline.sam.sam_prompt_encoder.embed_dim
         channels = [decoder.conv_s0.out_channels, decoder.conv_s1.out_channels, dim]
         self.head = RegionShapeHead(channels, c)
+        if c.scale_selection:
+            self.scale_module = AdaptiveScaleSelection(dim, c.width)
+        if c.detail_retrieval:
+            self.detail_module = RegionDetailRetrieval(dim, channels[-2], c.width,
+                                                       c.detail_window, c.detail_bias)
         self.dense_prompt = nn.Sequential(nn.Conv2d(3, c.width, 3, padding=1), nn.GELU(),
                                            nn.Conv2d(c.width, dim, 1))
         self.task_query = nn.Linear(dim, c.width, bias=False)
@@ -265,15 +281,22 @@ class RegionShapeSAM2(nn.Module):
         if self.config.mode == 'region_only':
             context = torch.zeros_like(context)
         sparse = task+self.sparse_prompt(context)
+        semantic = pyramid[-1]
+        feature_diagnostics = {}
+        if self.config.scale_selection:
+            semantic, feature_diagnostics['scale_weights'] = self.scale_module(semantic)
+        if self.config.detail_retrieval:
+            semantic, feature_diagnostics['detail_attention'] = self.detail_module(
+                semantic, pyramid[-2], state['occupancy'], state['weights'])
         sam = self.baseline.sam
         masks, _, _, _ = sam.sam_mask_decoder(
-            image_embeddings=pyramid[-1], image_pe=sam.sam_prompt_encoder.get_dense_pe(),
+            image_embeddings=semantic, image_pe=sam.sam_prompt_encoder.get_dense_pe(),
             sparse_prompt_embeddings=sparse, dense_prompt_embeddings=dense,
             multimask_output=False, repeat_image=False, high_res_features=pyramid[:-1])
         logits = F.interpolate(masks.float(), images.shape[-2:], mode='bilinear', align_corners=False)
         if not torch.isfinite(logits).all():
             raise FloatingPointError('Nonfinite joint decoder output')
-        return {'logits': logits, 'baseline_logits': initial.detach(), **state}
+        return {'logits': logits, 'baseline_logits': initial.detach(), **state, **feature_diagnostics}
 
     def forward(self, images):
         return self.forward_details(images)['logits']

@@ -1,0 +1,21 @@
+# V3 mechanism only. Use alongside the unchanged polyp_full_aug.yaml (light).
+width: 64
+heads: 4
+hypotheses: 4
+rounds: 2
+grid_size: 64
+temperature: 0.2
+field_clip: 8.0
+region_weight: 0.1
+field_weight: 0.1
+consensus_weight: 0.1
+diversity_weight: 0.01
+diversity_margin: 0.05
+train_decoder: false
+mode: full
+
+# Optional feature refinement; preserves the original prompt path.
+scale_selection: true
+detail_retrieval: true
+detail_window: 5
+detail_bias: 1.0
