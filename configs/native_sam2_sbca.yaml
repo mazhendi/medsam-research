@@ -1,0 +1,22 @@
+# Original SAM2 Hiera-L weights; this is NOT the measured SAM2-UNet model.
+architecture: native_sam2_hiera_l
+sam_config: configs/sam2/sam2_hiera_l.yaml
+encoder_checkpoint: ../checkpoints/sam2_hiera_large.pt
+train_manifest: ../data/polyp_full/train_all.csv
+output: ../runs/native_sam2_sbca
+expected_train_count: 1450
+image_size: 352
+epochs: 20
+batch_size: 16
+learning_rate: 0.0001
+weight_decay: 0.0005
+workers: 4
+seed: 42
+device: cuda
+save_every: 5
+task_tokens: 4
+evidence_loss_weight: 0.1
+modules:
+  scds: false
+  sbca: true
+  rcsr: false

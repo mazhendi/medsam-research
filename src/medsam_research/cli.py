@@ -8,6 +8,18 @@ from .data import audit_manifests
 def main(argv=None):
     parser = argparse.ArgumentParser(description="SAM 2.1 automatic binary segmentation baseline")
     sub = parser.add_subparsers(dest="command", required=True)
+    for name in ("train-native-sam2", "probe-native-sam2"):
+        command = sub.add_parser(name, help="Native SAM2 decoder with SCDS/SBCA/RCSR switches")
+        command.add_argument("--config", required=True)
+        if name == "probe-native-sam2":
+            command.add_argument("--steps", type=int, default=2)
+            command.add_argument("--batch-size", type=int, default=1)
+    native_predict = sub.add_parser("predict-native-sam2")
+    native_predict.add_argument("--checkpoint", required=True)
+    native_predict.add_argument("--manifest", required=True)
+    native_predict.add_argument("--output", required=True)
+    native_predict.add_argument("--device", default="cuda")
+    native_predict.add_argument("--normalization", choices=["raw", "per-image"], default="raw")
     merge = sub.add_parser("merge-polyp-training", help="Combine train/val into 1450 training pairs")
     merge.add_argument("--manifests", nargs="+", required=True)
     merge.add_argument("--output", required=True)
@@ -72,6 +84,18 @@ def main(argv=None):
             if name == "diagnose-region-shape":
                 command.add_argument("--window-size", type=int, default=8)
     args = parser.parse_args(argv)
+    if args.command in {"train-native-sam2", "probe-native-sam2", "predict-native-sam2"}:
+        from . import native_sam2_workflow as workflow
+
+        if args.command == "train-native-sam2":
+            report = workflow.train_native(args.config)
+        elif args.command == "probe-native-sam2":
+            report = workflow.probe_native(args.config, args.steps, args.batch_size)
+        else:
+            report = workflow.predict_native(args.checkpoint, args.manifest, args.output,
+                                              args.device, args.normalization)
+        print(json.dumps(report, indent=2))
+        return
     if args.command in {"merge-polyp-training", "train-sam2-unet", "predict-sam2-unet"}:
         from . import sam2_unet_workflow as workflow
 

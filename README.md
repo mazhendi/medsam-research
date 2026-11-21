@@ -4,6 +4,8 @@
 
 新增：[SAM2-UNet基线：1450张、352输入、安装与训练命令](docs/SAM2_UNET_BASELINE.md)。使用原始SAM2 Large权重，独立训练Adapter、RFB与U形解码器；不加载旧Small分割权重。
 
+实验分支：[原生SAM2 Mask Decoder＋SCDS/SBCA/RCSR](docs/NATIVE_SAM2_MODULES.md)。提供原生对照、三组单模块与完整模型配置；先运行真实权重探针，再训练。尚未证明其精度优于SAM2-UNet。
+
 ## 当前实现与边界
 
 - 已实现：可学习任务 token、冻结图像编码器、训练掩码解码器；CSV 数据配对、数据检查、训练、原始分辨率评估、无标签推理、检查点与运行记录。
