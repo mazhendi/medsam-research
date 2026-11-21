@@ -6,7 +6,8 @@ output: ../runs/sam2_unet_polyp1450_352
 expected_train_count: 1450
 image_size: 352
 epochs: 20
-batch_size: 12
+# Project comparison protocol; author's released default is 12.
+batch_size: 16
 learning_rate: 0.001
 weight_decay: 0.0005
 workers: 4

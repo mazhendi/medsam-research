@@ -97,7 +97,7 @@ def load_unet_config(path):
         cfg[key] = str((path.parent / cfg[key]).resolve())
     if cfg.get("image_size", 352) != 352:
         raise ValueError("This baseline protocol requires base image_size=352")
-    if cfg.get("epochs", 20) < 1 or cfg.get("batch_size", 12) < 1:
+    if cfg.get("epochs", 20) < 1 or cfg.get("batch_size", 16) < 1:
         raise ValueError("epochs and batch_size must be positive")
     scales = cfg.get("scales", [1.0])
     if not scales or any(rate <= 0 for rate in scales):
@@ -142,7 +142,7 @@ def train_unet(config_path):
     epochs = cfg.get("epochs", 20)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, epochs, eta_min=1e-7)
     loader = DataLoader(
-        PolypUNetDataset(records), batch_size=cfg.get("batch_size", 12), shuffle=True,
+        PolypUNetDataset(records), batch_size=cfg.get("batch_size", 16), shuffle=True,
         num_workers=cfg.get("workers", 4), pin_memory=device.type == "cuda",
         worker_init_fn=seed_worker, generator=torch.Generator().manual_seed(seed),
     )

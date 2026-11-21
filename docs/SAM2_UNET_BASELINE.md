@@ -46,7 +46,9 @@ medsam audit data/polyp_full/train_all.csv /path/to/Kvasir.csv /path/to/ClinicDB
 medsam train-sam2-unet --config configs/sam2_unet_polyp1450.yaml
 ```
 
-默认1450张、352、batch12、20轮、FP32、AdamW lr.001/wd.0005、cosine至1e-7；水平/垂直翻转各.5；ImageNet归一化；三个输出的weighted BCE+weighted IoU相加。标签与作者代码一致采用bicubic软目标，不沿用历史light增强。
+默认1450张、352、batch16、20轮、FP32、AdamW lr.001/wd.0005、cosine至1e-7；水平/垂直翻转各.5；ImageNet归一化；三个输出的weighted BCE+weighted IoU相加。标签与作者代码一致采用bicubic软目标，不沿用历史light增强。
+
+Batch16是本项目对比协议，参考多篇息肉分割论文采用的批大小；SAM2-UNet作者默认是12。因此本配置属于基于作者实现的协议调整，不能标为完全相同超参的原版复现。尚未在4090上验证batch16的完整反向显存。
 
 配置路径相对YAML位置。输出目录必须不存在，以免覆盖旧实验。日志记录optimizer steps，隔5轮保存快照；`last.pt`为固定末轮，无外部测试选模，也不将已合并进训练的145张继续作为验证。当前没有断点续训；保存文件包含完整模型与训练来源记录，不包含可恢复优化器状态。
 
