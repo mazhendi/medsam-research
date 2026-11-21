@@ -1,0 +1,18 @@
+# Separate baseline: original SAM2, NOT SAM2.1; paths relative to this YAML.
+architecture: sam2_unet_hiera_l
+encoder_checkpoint: ../checkpoints/sam2_hiera_large.pt
+train_manifest: ../data/polyp_full/train_all.csv
+output: ../runs/sam2_unet_polyp1450_352
+expected_train_count: 1450
+image_size: 352
+epochs: 20
+batch_size: 12
+learning_rate: 0.001
+weight_decay: 0.0005
+workers: 4
+seed: 42
+device: cuda
+save_every: 5
+# Matches author's released single-scale train.py. The paper additionally lists
+# [1.0, 1.25]; set that list and use a NEW output path for the paper-scale variant.
+scales: [1.0]

@@ -8,6 +8,17 @@ from .data import audit_manifests
 def main(argv=None):
     parser = argparse.ArgumentParser(description="SAM 2.1 automatic binary segmentation baseline")
     sub = parser.add_subparsers(dest="command", required=True)
+    merge = sub.add_parser("merge-polyp-training", help="Combine train/val into 1450 training pairs")
+    merge.add_argument("--manifests", nargs="+", required=True)
+    merge.add_argument("--output", required=True)
+    unet_train = sub.add_parser("train-sam2-unet", help="Train separate SAM2 Hiera-L baseline")
+    unet_train.add_argument("--config", required=True)
+    unet_predict = sub.add_parser("predict-sam2-unet", help="Export native-grid probability maps")
+    unet_predict.add_argument("--config", required=True)
+    unet_predict.add_argument("--checkpoint", required=True)
+    unet_predict.add_argument("--manifest", required=True)
+    unet_predict.add_argument("--output", required=True)
+    unet_predict.add_argument("--normalization", choices=["raw", "per-image"], default="raw")
     retina = sub.add_parser("prepare-retina", help="Convert DRIVE/STARE/CHASE_DB1 to paired PNGs")
     retina.add_argument("--dataset", required=True, choices=["DRIVE", "STARE", "CHASE_DB1"])
     retina.add_argument("--source", nargs="+", help="ZIP/TAR files or extracted directories")
@@ -61,6 +72,18 @@ def main(argv=None):
             if name == "diagnose-region-shape":
                 command.add_argument("--window-size", type=int, default=8)
     args = parser.parse_args(argv)
+    if args.command in {"merge-polyp-training", "train-sam2-unet", "predict-sam2-unet"}:
+        from . import sam2_unet_workflow as workflow
+
+        if args.command == "merge-polyp-training":
+            report = workflow.merge_training_manifests(args.manifests, args.output)
+        elif args.command == "train-sam2-unet":
+            report = workflow.train_unet(args.config)
+        else:
+            report = workflow.predict_unet(args.config, args.checkpoint, args.manifest,
+                                           args.output, args.normalization)
+        print(json.dumps(report, indent=2))
+        return
     if args.command == "prepare-retina":
         from .retina import prepare_retina
 
