@@ -121,3 +121,67 @@ def test_default_full_and_short_budgets():
     assert full["epochs"] == 99 and short["epochs"] == 20
     assert full["scales"] == short["scales"] == [.75, 1., 1.25]
     assert full["output"] != short["output"]
+
+
+@pytest.mark.parametrize("size", [352, 448, 512])
+def test_resolution_override_uses_requested_size_and_native_output(tmp_path, monkeypatch, size):
+    import json
+
+    path, _ = write_config(tmp_path)
+    write_data(tmp_path)
+    model = TinyTwoHead()
+    checkpoint = tmp_path / "model.pt"
+    torch.save(dict(architecture="polyp_pvt_b2", model=model.state_dict(), epoch=1,
+                    provenance={"config": {"image_size": 352}}), checkpoint)
+    shapes = []
+    model.register_forward_pre_hook(lambda _, args: shapes.append(tuple(args[0].shape)))
+    monkeypatch.setattr(workflow, "build_polyp_pvt", lambda *args: model)
+    output = tmp_path / "predictions"
+    workflow.predict_pvt(path, checkpoint, tmp_path / "train.csv", output, inference_size=size)
+    assert shapes == [(1, 3, size, size)] * 2
+    with Image.open(output / "000000.png") as image:
+        assert image.size == (17, 11)
+    provenance = json.loads((output / "provenance.json").read_text())
+    assert provenance["inference_size"] == size
+    assert provenance["training_image_size"] == 352
+    assert provenance["elapsed_seconds"] >= 0
+
+
+@pytest.mark.parametrize("size", [0, 33, 351, 353, -32, True, 352.0])
+def test_invalid_resolution_rejected_before_file_access(size):
+    with pytest.raises(ValueError, match="inference_size"):
+        workflow.predict_pvt("absent", "absent", "absent", "absent", inference_size=size)
+
+
+def test_sweep_keeps_five_sets_and_three_resolutions_independent(tmp_path, monkeypatch):
+    path, _ = write_config(tmp_path)
+    write_data(tmp_path)
+    checkpoint = tmp_path / "model.pt"
+    checkpoint.write_bytes(b"test checkpoint")
+    for name in workflow.POLYP_TEST_SETS:
+        (tmp_path / f"{name}_dedup.csv").write_bytes((tmp_path / "train.csv").read_bytes())
+    calls = []
+
+    def fake_predict(config, state, manifest, output, normalization, inference_size):
+        calls.append((state, manifest.name, inference_size, normalization, output))
+        output.mkdir(parents=True)
+        return dict(output=str(output), count=2, inference_size=inference_size)
+
+    monkeypatch.setattr(workflow, "predict_pvt", fake_predict)
+    report = workflow.sweep_pvt(path, checkpoint, tmp_path, tmp_path / "sweep")
+    assert len(calls) == len(report["results"]) == 15
+    assert {call[0] for call in calls} == {checkpoint.resolve()}
+    assert {call[2] for call in calls} == {352, 448, 512}
+    assert len({call[4] for call in calls}) == 15
+    assert report["selection"] == "none_diagnostic_only"
+    assert (tmp_path / "sweep/sweep.json").is_file()
+
+
+def test_sweep_missing_set_fails_before_output(tmp_path):
+    path, _ = write_config(tmp_path)
+    checkpoint = tmp_path / "model.pt"
+    checkpoint.write_bytes(b"test checkpoint")
+    output = tmp_path / "sweep"
+    with pytest.raises(FileNotFoundError):
+        workflow.sweep_pvt(path, checkpoint, tmp_path, output)
+    assert not output.exists()

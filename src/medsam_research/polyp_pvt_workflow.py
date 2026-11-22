@@ -3,6 +3,7 @@ import csv
 import hashlib
 import json
 import random
+import time
 from pathlib import Path
 
 import numpy as np
@@ -138,8 +139,16 @@ def train_pvt(config_path):
     return dict(output=str(output), checkpoint=str(output / "last.pt"), steps=steps)
 
 
+def validate_inference_size(size):
+    if isinstance(size, bool) or not isinstance(size, int) or size < 64 or size % 32:
+        raise ValueError("inference_size must be an integer multiple of 32, at least 64")
+    return size
+
+
 @torch.inference_mode()
-def predict_pvt(config_path, checkpoint, manifest, output, normalization="raw"):
+def predict_pvt(config_path, checkpoint, manifest, output, normalization="raw",
+                inference_size=352):
+    validate_inference_size(inference_size)
     cfg = load_pvt_config(config_path)
     output = Path(output)
     if output.exists():
@@ -156,10 +165,14 @@ def predict_pvt(config_path, checkpoint, manifest, output, normalization="raw"):
     records = read_manifest(manifest, require_masks=False)
     output.mkdir(parents=True)
     mapping = []
+    if device.type == "cuda":
+        torch.cuda.synchronize(device)
+        torch.cuda.reset_peak_memory_stats(device)
+    started = time.perf_counter()
     for index, record in enumerate(records):
         with Image.open(record.image) as handle:
             image = handle.convert("RGB")
-        x = image_tensor(image.resize((352, 352), Image.Resampling.BILINEAR))
+        x = image_tensor(image.resize((inference_size, inference_size), Image.Resampling.BILINEAR))
         first, second = model(x[None].to(device))
         logits = first + second
         probability = F.interpolate(logits, (image.height, image.width), mode="bilinear",
@@ -170,6 +183,10 @@ def predict_pvt(config_path, checkpoint, manifest, output, normalization="raw"):
         filename = f"{index:06d}.png"
         Image.fromarray((probability * 255).astype(np.uint8)).save(output / filename)
         mapping.append(dict(id=record.sample_id, image=str(record.image), prediction=filename))
+    if device.type == "cuda":
+        torch.cuda.synchronize(device)
+    elapsed = time.perf_counter() - started
+    peak_memory = torch.cuda.max_memory_allocated(device) if device.type == "cuda" else None
     with (output / "predictions.csv").open("w", newline="", encoding="utf-8") as stream:
         writer = csv.DictWriter(stream, fieldnames=["id", "image", "prediction"])
         writer.writeheader()
@@ -179,5 +196,58 @@ def predict_pvt(config_path, checkpoint, manifest, output, normalization="raw"):
         checkpoint_sha256=hashlib.sha256(Path(checkpoint).read_bytes()).hexdigest(),
         manifest_sha256=file_hash(manifest), normalization=normalization, encoding="uint8_floor",
         prediction="sigmoid(upsample(logit1+logit2))", epoch=state["epoch"],
-        upstream_commit=UPSTREAM_COMMIT, native_grid=True, count=len(records)), indent=2))
-    return dict(output=str(output), count=len(records))
+        upstream_commit=UPSTREAM_COMMIT, native_grid=True, count=len(records),
+        inference_size=inference_size, training_image_size=state.get("provenance", {}).get(
+            "config", {}).get("image_size"), device=str(device), precision="fp32",
+        elapsed_seconds=elapsed, seconds_per_image=elapsed / len(records) if records else None,
+        peak_cuda_allocated_bytes=peak_memory,
+        timing_scope="image loading, preprocessing, forward, native resize, PNG save; includes warmup"
+    ), indent=2))
+    return dict(output=str(output), count=len(records), inference_size=inference_size)
+
+
+POLYP_TEST_SETS = ("Kvasir", "CVC-ClinicDB", "CVC-300", "CVC-ColonDB", "ETIS-LaribPolypDB")
+
+
+def sweep_pvt(config_path, checkpoint, manifest_dir, output, sizes=(352, 448, 512),
+              normalization="raw", manifest_suffix="_dedup.csv"):
+    """One checkpoint, independent resolutions; no GT access, ensembling or selection."""
+    sizes = list(sizes)
+    if not sizes or len(set(sizes)) != len(sizes):
+        raise ValueError("sizes must be nonempty and distinct")
+    for size in sizes:
+        validate_inference_size(size)
+    if normalization not in {"raw", "per-image"}:
+        raise ValueError("Expected raw or per-image normalization")
+    load_pvt_config(config_path)
+    if not Path(checkpoint).is_file():
+        raise FileNotFoundError(checkpoint)
+    output = Path(output)
+    if output.exists():
+        raise FileExistsError(output)
+    manifests = {name: Path(manifest_dir) / (name + manifest_suffix) for name in POLYP_TEST_SETS}
+    # Fail before exporting any predictions when one of the five manifests is absent.
+    for path in manifests.values():
+        records = read_manifest(path, require_masks=False)
+        if not records:
+            raise ValueError(f"Empty prediction manifest: {path}")
+        for record in records:
+            if not record.image.is_file():
+                raise FileNotFoundError(record.image)
+    checkpoint = Path(checkpoint).resolve()
+    checkpoint_hash = file_hash(checkpoint)
+    manifest_hashes = {name: file_hash(path) for name, path in manifests.items()}
+    output.mkdir(parents=True)
+    report = dict(checkpoint=str(checkpoint), checkpoint_sha256=checkpoint_hash,
+                  sizes=sizes, normalization=normalization, selection="none_diagnostic_only",
+                  manifest_sha256=manifest_hashes, results=[])
+    for size in sizes:
+        for name, manifest in manifests.items():
+            if file_hash(checkpoint) != checkpoint_hash or file_hash(manifest) != manifest_hashes[name]:
+                raise RuntimeError("Checkpoint or manifest changed during sweep")
+            print(f"Predicting {name} at {size} x {size}", flush=True)
+            result = predict_pvt(config_path, checkpoint, manifest, output / str(size) / name,
+                                 normalization=normalization, inference_size=size)
+            report["results"].append(dict(dataset=name, **result))
+            (output / "sweep.json").write_text(json.dumps(report, indent=2))
+    return report

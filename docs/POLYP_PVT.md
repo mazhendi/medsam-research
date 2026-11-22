@@ -76,3 +76,57 @@ medsam predict-polyp-pvt --config configs/polyp_pvt_1450.yaml --checkpoint runs/
 本项目明确不复用该选模过程，使用预先固定末轮，不读取测试GT选轮或选参数。
 因此称为“官方结构和默认训练设置接入，固定末轮协议”，不声称与作者所有实验步骤完全相同。
 如需要验证选模，应另设训练池内验证划分，并对所有模型统一协议；不能仍称1450张全部训练。
+
+## 分辨率诊断：同一权重，352 / 448 / 512独立推理
+
+先做这一步，无需重训，也无需修改训练YAML中的`image_size: 352`。
+新参数`--inference-size`只控制预测时的输入尺寸；默认352，原有预测行为不变。
+输出仍还原到每张原图大小。两路logit相加、概率处理和PNG编码保持一致。
+这不是多尺度集成，不会将三个尺寸的预测混在一起。
+
+五个数据集一键预测，共15份预测目录：
+
+```bash
+medsam sweep-polyp-pvt --config configs/polyp_pvt_1450.yaml --checkpoint runs/polyp_pvt_1450_352_99ep/last.pt --manifest-dir data/polyp_test --output outputs/polyp_pvt_resolution_raw --sizes 352 448 512 --normalization raw
+```
+
+将`--checkpoint`改为本机实际完成训练的项目权重路径。默认读取五份
+`Kvasir_dedup.csv`、`CVC-ClinicDB_dedup.csv`、`CVC-300_dedup.csv`、
+`CVC-ColonDB_dedup.csv`、`ETIS-LaribPolypDB_dedup.csv`，只读图像，不读GT。
+若已有清单无`_dedup`后缀，明确传`--manifest-suffix .csv`；不要更换测试样本来比较尺寸。
+
+目录结构为：
+
+```text
+outputs/polyp_pvt_resolution_raw/
+  sweep.json
+  352/Kvasir/{predictions.csv,provenance.json,000000.png,...}
+  352/CVC-ClinicDB/...
+  ...
+  448/Kvasir/...
+  ...
+  512/ETIS-LaribPolypDB/...
+```
+
+每个尺寸子目录都保持现有评估工具要求的五测试集结构，分别评估即可。
+`sweep.json`记录同一权重哈希、测试清单哈希及所有子任务；缺少任何一份清单会在开始前报错。
+输出目录必须不存在；中途失败时已完成子目录保留供检查，不自动覆盖或续跑。
+
+如果之前0.8606来自作者逐图min-max概率，请将上述命令的`--normalization`改成`per-image`，
+并使用新输出目录`outputs/polyp_pvt_resolution_minmax`。本次三个尺寸必须完全采用同一口径，
+不要将raw结果与既有min-max结果直接比较；建议重新导出352作为同步对照。
+
+只预测一个数据集、一个尺寸：
+
+```bash
+medsam predict-polyp-pvt --config configs/polyp_pvt_1450.yaml --checkpoint runs/polyp_pvt_1450_352_99ep/last.pt --manifest data/polyp_test/ETIS-LaribPolypDB_dedup.csv --output outputs/polyp_pvt_etis_512 --inference-size 512 --normalization raw
+```
+
+各目录的provenance记录训练/推理尺寸、设备、FP32、处理总时间及CUDA峰值allocated显存。
+时间包含读图、预处理、前向、原图还原、PNG保存和首次预热，排除模型加载；
+用于粗略成本对照，不等同纯模型延迟基准。
+
+对比时同时查看固定0.5 Dice、256阈值平均Dice，以及统一固定0.5口径下的面积桶
+`<0.1% / 0.1–0.3% / 0.3–1% / 1–3%`。本命令只输出概率图，不自动选尺寸或报告最佳测试结果。
+测试集扫描用于诊断；最终参数选择应由训练池内验证集确定。
+本更新没有启动512训练，也没有证明高分辨率一定有效。

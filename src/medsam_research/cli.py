@@ -43,6 +43,13 @@ def main(argv=None):
     for flag in ("config", "checkpoint", "manifest", "output"):
         pvt_predict.add_argument("--" + flag, required=True)
     pvt_predict.add_argument("--normalization", choices=["raw", "per-image"], default="raw")
+    pvt_predict.add_argument("--inference-size", type=int, default=352)
+    pvt_sweep = sub.add_parser("sweep-polyp-pvt", help="Independent 352/448/512 five-set predictions")
+    for flag in ("config", "checkpoint", "manifest-dir", "output"):
+        pvt_sweep.add_argument("--" + flag, required=True)
+    pvt_sweep.add_argument("--sizes", nargs="+", type=int, default=[352, 448, 512])
+    pvt_sweep.add_argument("--manifest-suffix", default="_dedup.csv")
+    pvt_sweep.add_argument("--normalization", choices=["raw", "per-image"], default="raw")
     retina = sub.add_parser("prepare-retina", help="Convert DRIVE/STARE/CHASE_DB1 to paired PNGs")
     retina.add_argument("--dataset", required=True, choices=["DRIVE", "STARE", "CHASE_DB1"])
     retina.add_argument("--source", nargs="+", help="ZIP/TAR files or extracted directories")
@@ -96,14 +103,18 @@ def main(argv=None):
             if name == "diagnose-region-shape":
                 command.add_argument("--window-size", type=int, default=8)
     args = parser.parse_args(argv)
-    if args.command in {"train-polyp-pvt", "predict-polyp-pvt"}:
+    if args.command in {"train-polyp-pvt", "predict-polyp-pvt", "sweep-polyp-pvt"}:
         from . import polyp_pvt_workflow as workflow
 
         if args.command == "train-polyp-pvt":
             report = workflow.train_pvt(args.config)
+        elif args.command == "sweep-polyp-pvt":
+            report = workflow.sweep_pvt(args.config, args.checkpoint, args.manifest_dir,
+                                       args.output, args.sizes, args.normalization,
+                                       args.manifest_suffix)
         else:
             report = workflow.predict_pvt(args.config, args.checkpoint, args.manifest,
-                                          args.output, args.normalization)
+                                          args.output, args.normalization, args.inference_size)
         print(json.dumps(report, indent=2))
         return
     if args.command in {"train-local-background", "probe-local-background"}:
