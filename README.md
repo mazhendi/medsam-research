@@ -1,5 +1,7 @@
+> **新增待验证架构**：SCSI＋BCSC＋区域—边界解码器，完整替换原解码部分。见[运行与消融说明](docs/SUBBAND_PVT.md)。原版Polyp-PVT继续作为主基线。
+
 > **当前主基线：Polyp-PVT（PVTv2-B2）**。SAM2-UNet和原生SAM2保留为对照。
-> 安装、训练和预测命令见 [Polyp-PVT运行说明](docs/POLYP_PVT.md)。尚未取得本项目Polyp-PVT训练成绩。
+> 安装、训练和预测命令见 [Polyp-PVT运行说明](docs/POLYP_PVT.md)。用户已报告352基线五集宏平均Dice为0.8606；新架构尚无完整训练成绩。
 
 # medsam-research
 

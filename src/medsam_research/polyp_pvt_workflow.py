@@ -44,8 +44,23 @@ class PolypPVTDataset(Dataset):
 def load_pvt_config(path):
     path = Path(path).resolve()
     cfg = yaml.safe_load(path.read_text(encoding="utf-8"))
-    if cfg.get("architecture") != "polyp_pvt_b2":
-        raise ValueError("Expected architecture: polyp_pvt_b2")
+    if cfg.get("architecture") not in {"polyp_pvt_b2", "subband_pvt_b2"}:
+        raise ValueError("Expected architecture: polyp_pvt_b2 or subband_pvt_b2")
+    if cfg["architecture"] == "subband_pvt_b2":
+        options = cfg.get("decoder", {})
+        if not isinstance(options, dict):
+            raise ValueError("decoder must be a mapping")
+        if set(options) - {"width", "attention_dim", "scsi", "bcsc", "boundary"}:
+            raise ValueError("Unknown decoder option")
+        width, dim = options.get("width", 64), options.get("attention_dim", 16)
+        if not isinstance(width, int) or width < 16 or width % 8:
+            raise ValueError("decoder width must be a multiple of 8 >=16")
+        if not isinstance(dim, int) or dim < 1:
+            raise ValueError("attention_dim must be positive")
+        if any(not isinstance(options.get(k, True), bool) for k in ("scsi", "bcsc", "boundary")):
+            raise ValueError("Module switches must be boolean")
+        if cfg.get("edge_weight", .2) < 0:
+            raise ValueError("edge_weight must be nonnegative")
     for key in ("upstream", "encoder_checkpoint", "train_manifest", "output"):
         cfg[key] = str((path.parent / cfg[key]).resolve())
     if cfg.get("image_size") not in {352, 512} or isinstance(cfg.get("image_size"), bool):
@@ -62,6 +77,16 @@ def load_pvt_config(path):
     if cfg.get("learning_rate", 0) <= 0 or cfg.get("gradient_clip", 0) <= 0:
         raise ValueError("learning_rate and gradient_clip must be positive")
     return cfg
+
+
+def build_configured_model(cfg, encoder_checkpoint=None):
+    model = build_polyp_pvt(cfg["upstream"], encoder_checkpoint)
+    if cfg["architecture"] == "subband_pvt_b2":
+        from .subband_decoder import SubbandPVT
+
+        # Only the encoder is retained; none of the original decoder modules are stored.
+        model = SubbandPVT(model.backbone, **cfg.get("decoder", {}))
+    return model
 
 
 def train_pvt(config_path):
@@ -88,7 +113,7 @@ def train_pvt(config_path):
         if digest in seen:
             raise ValueError(f"Duplicate training image: {record.image}")
         seen.add(digest)
-    model = build_polyp_pvt(cfg["upstream"], cfg["encoder_checkpoint"]).to(device)
+    model = build_configured_model(cfg, cfg["encoder_checkpoint"]).to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=cfg["learning_rate"],
                                   weight_decay=cfg["weight_decay"])
     loader = DataLoader(PolypPVTDataset(records, size=cfg["image_size"]),
@@ -122,7 +147,13 @@ def train_pvt(config_path):
                     x = F.interpolate(x, (size, size), mode="bilinear", align_corners=True)
                     y = F.interpolate(y, (size, size), mode="bilinear", align_corners=True)
                 optimizer.zero_grad(set_to_none=True)
-                loss = sum(structure_loss(logits, y) for logits in model(x))
+                predictions = model(x)
+                if cfg["architecture"] == "subband_pvt_b2":
+                    from .subband_decoder import decoder_loss
+
+                    loss = decoder_loss(predictions, y, cfg.get("edge_weight", .2))
+                else:
+                    loss = sum(structure_loss(logits, y) for logits in predictions)
                 if not torch.isfinite(loss):
                     raise RuntimeError(f"Nonfinite training loss at epoch {epoch}, step {steps}")
                 loss.backward()
@@ -162,8 +193,8 @@ def predict_pvt(config_path, checkpoint, manifest, output, normalization="raw",
         raise ValueError("Expected raw or per-image normalization")
     state = torch.load(checkpoint, map_location="cpu", weights_only=True)
     if state.get("architecture") != cfg["architecture"]:
-        raise ValueError("Expected project Polyp-PVT checkpoint")
-    model = build_polyp_pvt(cfg["upstream"])
+        raise ValueError("Checkpoint architecture must match the supplied config")
+    model = build_configured_model(cfg)
     model.load_state_dict(state["model"], strict=True)
     device = torch.device(cfg.get("device", "cuda"))
     model.to(device).eval()
@@ -178,7 +209,11 @@ def predict_pvt(config_path, checkpoint, manifest, output, normalization="raw",
         with Image.open(record.image) as handle:
             image = handle.convert("RGB")
         x = image_tensor(image.resize((inference_size, inference_size), Image.Resampling.BILINEAR))
-        first, second = model(x[None].to(device))
+        predictions = model(x[None].to(device))
+        if cfg["architecture"] == "subband_pvt_b2":
+            first, second = predictions["coarse"], predictions["refined"]
+        else:
+            first, second = predictions
         logits = first + second
         probability = F.interpolate(logits, (image.height, image.width), mode="bilinear",
                                     align_corners=False).sigmoid()[0, 0].cpu().numpy()

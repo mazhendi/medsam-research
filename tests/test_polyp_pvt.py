@@ -214,3 +214,37 @@ def test_512_config_changes_only_resolution_and_output():
     changed = {key for key in base if base[key] != high[key]}
     assert changed == {"image_size", "output"}
     assert high["image_size"] == 512
+
+
+def test_replacement_workflow_trains_and_predicts_dictionary_heads(tmp_path, monkeypatch):
+    import json
+
+    class ProposedHeads(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.heads = nn.Conv2d(3, 3, 1)
+
+        def forward(self, x):
+            a, b, edge = self.heads(x).split(1, dim=1)
+            return dict(coarse=a, refined=b, boundary=edge)
+
+    path, cfg = write_config(tmp_path)
+    cfg.update(architecture="subband_pvt_b2", decoder={"width": 16}, edge_weight=.2)
+    path.write_text(yaml.safe_dump(cfg))
+    write_data(tmp_path)
+    (tmp_path / "encoder.pth").write_bytes(b"probe")
+    model = ProposedHeads()
+    before = model.heads.weight.detach().clone()
+    monkeypatch.setattr(workflow, "build_configured_model", lambda *args: model)
+    report = workflow.train_pvt(path)
+    assert report["steps"] == 3
+    assert not torch.equal(model.heads.weight, before)
+    prediction = workflow.predict_pvt(path, report["checkpoint"], tmp_path / "train.csv",
+                                      tmp_path / "prediction")
+    assert prediction["count"] == 2
+    metadata = json.loads((tmp_path / "prediction/provenance.json").read_text())
+    assert metadata["architecture"] == "subband_pvt_b2"
+    cfg["architecture"] = "polyp_pvt_b2"
+    path.write_text(yaml.safe_dump(cfg))
+    with pytest.raises(ValueError, match="architecture"):
+        workflow.predict_pvt(path, report["checkpoint"], tmp_path / "train.csv", tmp_path / "bad")

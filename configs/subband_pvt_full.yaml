@@ -1,0 +1,30 @@
+# Proposed replacement decoder; no performance claim. PVTv2-B2 encoder only.
+architecture: subband_pvt_b2
+upstream: ../vendor/Polyp-PVT
+encoder_checkpoint: ../checkpoints/pvt_v2_b2.pth
+train_manifest: ../data/polyp_full/train_all.csv
+output: ../runs/subband_pvt_352_full
+expected_train_count: 1450
+image_size: 352
+# Upstream --epoch=100 executes range(1,100), i.e. 99 complete epochs.
+epochs: 99
+batch_size: 16
+learning_rate: 0.0001
+weight_decay: 0.0001
+gradient_clip: 0.5
+# Upstream default augmentation=False; three-scale updates remain enabled.
+augmentation: none
+scales: [0.75, 1.0, 1.25]
+workers: 4
+seed: 42
+device: cuda
+
+# Two core modules and a simultaneous region/boundary decoder.
+decoder:
+  width: 64
+  attention_dim: 16
+  scsi: true
+  bcsc: true
+  boundary: true
+# Additional training-only boundary structural loss; GT-free inference.
+edge_weight: 0.2
