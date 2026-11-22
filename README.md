@@ -1,3 +1,6 @@
+> **当前主基线：Polyp-PVT（PVTv2-B2）**。SAM2-UNet和原生SAM2保留为对照。
+> 安装、训练和预测命令见 [Polyp-PVT运行说明](docs/POLYP_PVT.md)。尚未取得本项目Polyp-PVT训练成绩。
+
 # medsam-research
 
 基于 **SAM 2.1 Hiera-Small** 的自动二值医学图像分割研究，另提供独立的 **SAM2 Hiera-L / SAM2-UNet** 息肉强基线。

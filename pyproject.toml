@@ -10,6 +10,7 @@ requires-python = ">=3.10"
 dependencies = ["torch>=2.5.1", "numpy>=1.24", "Pillow>=10", "PyYAML>=6", "scipy>=1.11", "scikit-image>=0.22"]
 
 [project.optional-dependencies]
+polyp-pvt = ["timm>=1.0,<1.1", "torchvision>=0.20"]
 dev = ["pytest>=8", "ruff>=0.9"]
 
 [project.scripts]

@@ -37,6 +37,12 @@ def main(argv=None):
     unet_predict.add_argument("--manifest", required=True)
     unet_predict.add_argument("--output", required=True)
     unet_predict.add_argument("--normalization", choices=["raw", "per-image"], default="raw")
+    pvt_train = sub.add_parser("train-polyp-pvt", help="Train pinned official Polyp-PVT baseline")
+    pvt_train.add_argument("--config", required=True)
+    pvt_predict = sub.add_parser("predict-polyp-pvt", help="Export summed-head probability maps")
+    for flag in ("config", "checkpoint", "manifest", "output"):
+        pvt_predict.add_argument("--" + flag, required=True)
+    pvt_predict.add_argument("--normalization", choices=["raw", "per-image"], default="raw")
     retina = sub.add_parser("prepare-retina", help="Convert DRIVE/STARE/CHASE_DB1 to paired PNGs")
     retina.add_argument("--dataset", required=True, choices=["DRIVE", "STARE", "CHASE_DB1"])
     retina.add_argument("--source", nargs="+", help="ZIP/TAR files or extracted directories")
@@ -90,6 +96,16 @@ def main(argv=None):
             if name == "diagnose-region-shape":
                 command.add_argument("--window-size", type=int, default=8)
     args = parser.parse_args(argv)
+    if args.command in {"train-polyp-pvt", "predict-polyp-pvt"}:
+        from . import polyp_pvt_workflow as workflow
+
+        if args.command == "train-polyp-pvt":
+            report = workflow.train_pvt(args.config)
+        else:
+            report = workflow.predict_pvt(args.config, args.checkpoint, args.manifest,
+                                          args.output, args.normalization)
+        print(json.dumps(report, indent=2))
+        return
     if args.command in {"train-local-background", "probe-local-background"}:
         from . import local_background_workflow as workflow
 

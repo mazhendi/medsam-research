@@ -1,0 +1,20 @@
+# Primary baseline, official architecture and released training defaults.
+architecture: polyp_pvt_b2
+upstream: ../vendor/Polyp-PVT
+encoder_checkpoint: ../checkpoints/pvt_v2_b2.pth
+train_manifest: ../data/polyp_full/train_all.csv
+output: ../runs/polyp_pvt_1450_352_20ep
+expected_train_count: 1450
+image_size: 352
+# Short 20-epoch comparison; not the released full training budget.
+epochs: 20
+batch_size: 16
+learning_rate: 0.0001
+weight_decay: 0.0001
+gradient_clip: 0.5
+# Upstream default augmentation=False; three-scale updates remain enabled.
+augmentation: none
+scales: [0.75, 1.0, 1.25]
+workers: 4
+seed: 42
+device: cuda
