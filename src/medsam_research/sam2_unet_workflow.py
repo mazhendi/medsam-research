@@ -33,9 +33,31 @@ def scaled_size(base, rate):
     return max(32, int(round(base * rate / 32)) * 32)
 
 
+def shrink_pair(image, mask, scale, left, top):
+    """Training-only paired shrink; image-mean padding, zero mask padding."""
+    width, height = image.size
+    small_size = (max(1, round(width * scale)), max(1, round(height * scale)))
+    small_image = image.resize(small_size, Image.Resampling.BILINEAR)
+    small_mask = mask.resize(small_size, Image.Resampling.BICUBIC)
+    if np.asarray(small_mask).max() < 128:
+        return image, mask  # Do not synthesize complete loss of a positive target.
+    fill = tuple(int(value) for value in np.rint(np.asarray(image).mean(axis=(0, 1))))
+    canvas = Image.new("RGB", (width, height), fill)
+    canvas.paste(small_image, (left, top))
+    target = Image.new("L", (width, height), 0)
+    target.paste(small_mask, (left, top))
+    return canvas, target
+
+
 class PolypUNetDataset(Dataset):
-    def __init__(self, records, size=352, augment=True):
+    def __init__(self, records, size=352, augment=True, shrink_probability=0.,
+                 shrink_min=.5, shrink_max=.8):
         self.records, self.size, self.augment = records, size, augment
+        if not 0 <= shrink_probability <= 1 or not 0 < shrink_min <= shrink_max <= 1:
+            raise ValueError("Invalid shrink probability or scale range")
+        self.shrink_probability = shrink_probability
+        self.shrink_min, self.shrink_max = shrink_min, shrink_max
+        self._shrink_rng = None
 
     def __len__(self):
         return len(self.records)
@@ -53,6 +75,16 @@ class PolypUNetDataset(Dataset):
         if self.augment and random.random() < .5:
             image = image.transpose(Image.Transpose.FLIP_TOP_BOTTOM)
             mask = mask.transpose(Image.Transpose.FLIP_TOP_BOTTOM)
+        if self.augment and self.shrink_probability:
+            # Independent worker-seeded stream preserves the baseline flip RNG sequence.
+            if self._shrink_rng is None:
+                self._shrink_rng = random.Random(torch.initial_seed() ^ 0x53485249)
+            rng = self._shrink_rng
+            if rng.random() < self.shrink_probability:
+                scale = rng.uniform(self.shrink_min, self.shrink_max)
+                margin = self.size - max(1, round(self.size * scale))
+                image, mask = shrink_pair(image, mask, scale, rng.randint(0, margin),
+                                          rng.randint(0, margin))
         x = torch.from_numpy(np.array(image, dtype=np.float32) / 255).permute(2, 0, 1)
         x = (x - x.new_tensor([.485, .456, .406])[:, None, None]) / x.new_tensor(
             [.229, .224, .225]

@@ -38,6 +38,12 @@ def load_native_config(path):
         raise ValueError("epochs and batch_size must be positive")
     if cfg.get("evidence_loss_weight", .1) < 0:
         raise ValueError("evidence_loss_weight cannot be negative")
+    shrink = cfg.get("shrink_augmentation", {})
+    if set(shrink) - {"probability", "min_scale", "max_scale"}:
+        raise ValueError("Unknown shrink augmentation option")
+    if (not 0 <= shrink.get("probability", 0.) <= 1
+            or not 0 < shrink.get("min_scale", .5) <= shrink.get("max_scale", .8) <= 1):
+        raise ValueError("Invalid shrink augmentation probability or scale range")
     return cfg
 
 
@@ -79,7 +85,11 @@ def train_native(config_path):
     optimizer = _optimizer(model, cfg)
     epochs = cfg.get("epochs", 20)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, epochs, eta_min=1e-7)
-    loader = DataLoader(PolypUNetDataset(records), batch_size=cfg.get("batch_size", 16),
+    shrink = cfg.get("shrink_augmentation", {})
+    dataset = PolypUNetDataset(records, shrink_probability=shrink.get("probability", 0.),
+                               shrink_min=shrink.get("min_scale", .5),
+                               shrink_max=shrink.get("max_scale", .8))
+    loader = DataLoader(dataset, batch_size=cfg.get("batch_size", 16),
                         shuffle=True, num_workers=cfg.get("workers", 4),
                         pin_memory=device.type == "cuda", worker_init_fn=seed_worker,
                         generator=torch.Generator().manual_seed(cfg.get("seed", 42)))
@@ -92,6 +102,10 @@ def train_native(config_path):
         normalization="ImageNet", mask_resize="bicubic_soft_target",
         native_embedding_grid=[22, 22], native_high_resolution_grids=[[88, 88], [44, 44]],
         rcsr_location="after_first_native_transposed_conv_before_high_res_addition",
+        shrink_augmentation=dict(probability=shrink.get("probability", 0.),
+                                 min_scale=shrink.get("min_scale", .5),
+                                 max_scale=shrink.get("max_scale", .8), image_padding="image_mean",
+                                 mask_padding="background_zero", apply_to="training_only"),
     )
     (output / "provenance.json").write_text(json.dumps(provenance, indent=2))
     steps = 0

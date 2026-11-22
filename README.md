@@ -6,6 +6,8 @@
 
 实验分支：[原生SAM2 Mask Decoder＋SCDS/SBCA/RCSR](docs/NATIVE_SAM2_MODULES.md)。提供原生对照、三组单模块与完整模型配置；先运行真实权重探针，再训练。尚未证明其精度优于SAM2-UNet。
 
+[尺度覆盖诊断对照](docs/NATIVE_SCALE_CONTROL.md)：原ZIP诊断脚本与独立缩小增强配置；不修改现有默认增强，不作为创新模块。
+
 ## 当前实现与边界
 
 - 已实现：可学习任务 token、冻结图像编码器、训练掩码解码器；CSV 数据配对、数据检查、训练、原始分辨率评估、无标签推理、检查点与运行记录。
