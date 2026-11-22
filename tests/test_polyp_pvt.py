@@ -248,3 +248,44 @@ def test_replacement_workflow_trains_and_predicts_dictionary_heads(tmp_path, mon
     path.write_text(yaml.safe_dump(cfg))
     with pytest.raises(ValueError, match="architecture"):
         workflow.predict_pvt(path, report["checkpoint"], tmp_path / "train.csv", tmp_path / "bad")
+
+
+def test_latest_workflow_trains_aux_heads_but_predicts_final_only(tmp_path, monkeypatch):
+    import json
+
+    class LatestHeads(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.heads = nn.Conv2d(3, 4, 1)
+
+        def forward(self, x):
+            values = self.heads(x).split(1, dim=1)
+            return dict(zip(("final", "coarse", "aux2", "aux3"), values))
+
+    path, cfg = write_config(tmp_path)
+    cfg.update(architecture="sds_adf_rtr_pvt_b2", decoder={"width": 16},
+               coarse_weight=.5, intermediate_weight=.25)
+    path.write_text(yaml.safe_dump(cfg))
+    write_data(tmp_path)
+    (tmp_path / "encoder.pth").write_bytes(b"probe")
+    model = LatestHeads()
+    before = model.heads.weight.detach().clone()
+    monkeypatch.setattr(workflow, "build_configured_model", lambda *args: model)
+    report = workflow.train_pvt(path)
+    assert report["steps"] == 3
+    assert not torch.equal(model.heads.weight, before)
+    saved = torch.load(report["checkpoint"], weights_only=True)
+    assert saved["provenance"]["prediction"] == "final_head_only"
+    with torch.no_grad():
+        model.heads.weight.zero_()
+        model.heads.bias.copy_(torch.tensor([-2., 5., 5., 5.]))
+    saved["model"] = model.state_dict()
+    checkpoint = tmp_path / "distinguishable_heads.pt"
+    torch.save(saved, checkpoint)
+    output = tmp_path / "latest_predictions"
+    workflow.predict_pvt(path, checkpoint, tmp_path / "train.csv", output)
+    with Image.open(output / "000000.png") as image:
+        pixels = np.asarray(image)
+    assert pixels.min() == pixels.max() == int(torch.sigmoid(torch.tensor(-2.)).item()*255)
+    metadata = json.loads((output / "provenance.json").read_text())
+    assert metadata["prediction"] == "sigmoid(upsample(final_logit))"

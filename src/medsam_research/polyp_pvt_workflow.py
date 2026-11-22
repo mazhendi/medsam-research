@@ -44,8 +44,24 @@ class PolypPVTDataset(Dataset):
 def load_pvt_config(path):
     path = Path(path).resolve()
     cfg = yaml.safe_load(path.read_text(encoding="utf-8"))
-    if cfg.get("architecture") not in {"polyp_pvt_b2", "subband_pvt_b2"}:
-        raise ValueError("Expected architecture: polyp_pvt_b2 or subband_pvt_b2")
+    if cfg.get("architecture") not in {"polyp_pvt_b2", "subband_pvt_b2", "sds_adf_rtr_pvt_b2"}:
+        raise ValueError("Unknown PVT architecture")
+    if cfg["architecture"] == "sds_adf_rtr_pvt_b2":
+        options = cfg.get("decoder", {})
+        if not isinstance(options, dict) or set(options)-{"width", "sds", "adf", "rtr", "tau"}:
+            raise ValueError("Invalid SDS/ADF/RTR decoder options")
+        width = options.get("width", 64)
+        if not isinstance(width, int) or isinstance(width, bool) or width < 8:
+            raise ValueError("decoder width must be an integer >=8")
+        if options.get("tau", .02) <= 0:
+            raise ValueError("tau must be positive")
+        if any(not isinstance(options.get(k, True), bool) for k in ("sds", "adf", "rtr")):
+            raise ValueError("Module switches must be boolean")
+        for key in ("coarse_weight", "intermediate_weight"):
+            if cfg.get(key, .5 if key == "coarse_weight" else .25) < 0:
+                raise ValueError("Supervision weights must be nonnegative")
+        if cfg.get("image_size") != 352:
+            raise ValueError("SDS/ADF/RTR training protocol is fixed at 352")
     if cfg["architecture"] == "subband_pvt_b2":
         options = cfg.get("decoder", {})
         if not isinstance(options, dict):
@@ -86,6 +102,10 @@ def build_configured_model(cfg, encoder_checkpoint=None):
 
         # Only the encoder is retained; none of the original decoder modules are stored.
         model = SubbandPVT(model.backbone, **cfg.get("decoder", {}))
+    elif cfg["architecture"] == "sds_adf_rtr_pvt_b2":
+        from .scale_direction_decoder import ScaleDirectionPVT
+
+        model = ScaleDirectionPVT(model.backbone, **cfg.get("decoder", {}))
     return model
 
 
@@ -129,7 +149,8 @@ def train_pvt(config_path):
                       manifest_sha256=file_hash(cfg["train_manifest"]),
                       encoder_sha256=file_hash(cfg["encoder_checkpoint"]),
                       trainable_parameters=sum(p.numel() for p in model.parameters()),
-                      prediction="sum_of_two_logits", mask_resize="bilinear_soft_target",
+                      prediction=("final_head_only" if cfg["architecture"] == "sds_adf_rtr_pvt_b2"
+                                  else "sum_of_two_logits"), mask_resize="bilinear_soft_target",
                       training_sizes=[scaled_size(cfg["image_size"], r) for r in cfg["scales"]],
                       updates_per_epoch=len(loader) * len(cfg["scales"]))
     output.mkdir(parents=True)
@@ -152,6 +173,11 @@ def train_pvt(config_path):
                     from .subband_decoder import decoder_loss
 
                     loss = decoder_loss(predictions, y, cfg.get("edge_weight", .2))
+                elif cfg["architecture"] == "sds_adf_rtr_pvt_b2":
+                    from .scale_direction_decoder import scale_direction_loss
+
+                    loss = scale_direction_loss(predictions, y, cfg.get("coarse_weight", .5),
+                                                cfg.get("intermediate_weight", .25))
                 else:
                     loss = sum(structure_loss(logits, y) for logits in predictions)
                 if not torch.isfinite(loss):
@@ -210,11 +236,13 @@ def predict_pvt(config_path, checkpoint, manifest, output, normalization="raw",
             image = handle.convert("RGB")
         x = image_tensor(image.resize((inference_size, inference_size), Image.Resampling.BILINEAR))
         predictions = model(x[None].to(device))
-        if cfg["architecture"] == "subband_pvt_b2":
-            first, second = predictions["coarse"], predictions["refined"]
+        if cfg["architecture"] == "sds_adf_rtr_pvt_b2":
+            logits = predictions["final"]
+        elif cfg["architecture"] == "subband_pvt_b2":
+            logits = predictions["coarse"] + predictions["refined"]
         else:
             first, second = predictions
-        logits = first + second
+            logits = first + second
         probability = F.interpolate(logits, (image.height, image.width), mode="bilinear",
                                     align_corners=False).sigmoid()[0, 0].cpu().numpy()
         if normalization == "per-image":
@@ -235,7 +263,8 @@ def predict_pvt(config_path, checkpoint, manifest, output, normalization="raw",
         architecture=cfg["architecture"], checkpoint=str(Path(checkpoint).resolve()),
         checkpoint_sha256=hashlib.sha256(Path(checkpoint).read_bytes()).hexdigest(),
         manifest_sha256=file_hash(manifest), normalization=normalization, encoding="uint8_floor",
-        prediction="sigmoid(upsample(logit1+logit2))", epoch=state["epoch"],
+        prediction=("sigmoid(upsample(final_logit))" if cfg["architecture"] == "sds_adf_rtr_pvt_b2"
+                    else "sigmoid(upsample(logit1+logit2))"), epoch=state["epoch"],
         upstream_commit=UPSTREAM_COMMIT, native_grid=True, count=len(records),
         inference_size=inference_size, training_image_size=state.get("provenance", {}).get(
             "config", {}).get("image_size"), device=str(device), precision="fp32",
