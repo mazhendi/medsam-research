@@ -185,3 +185,32 @@ def test_sweep_missing_set_fails_before_output(tmp_path):
     with pytest.raises(FileNotFoundError):
         workflow.sweep_pvt(path, checkpoint, tmp_path, output)
     assert not output.exists()
+
+
+@pytest.mark.parametrize("base,sizes", [(352, [256, 352, 448]), (512, [384, 512, 640])])
+def test_training_resolution_controls_all_scale_inputs(tmp_path, monkeypatch, base, sizes):
+    path, cfg = write_config(tmp_path)
+    cfg["image_size"] = base
+    path.write_text(yaml.safe_dump(cfg))
+    write_data(tmp_path)
+    (tmp_path / "encoder.pth").write_bytes(b"probe")
+    model = TinyTwoHead()
+    observed = []
+    model.register_forward_pre_hook(lambda _, args: observed.append(tuple(args[0].shape)))
+    monkeypatch.setattr(workflow, "build_polyp_pvt", lambda *args: model)
+    report = workflow.train_pvt(path)
+    assert observed == [(2, 3, size, size) for size in sizes]
+    assert report["steps"] == 3
+    state = torch.load(report["checkpoint"], weights_only=True)
+    assert state["provenance"]["training_sizes"] == sizes
+    assert state["provenance"]["updates_per_epoch"] == 3
+    assert state["provenance"]["config"]["image_size"] == base
+
+
+def test_512_config_changes_only_resolution_and_output():
+    root = Path(__file__).resolve().parents[1]
+    base = workflow.load_pvt_config(root / "configs/polyp_pvt_1450.yaml")
+    high = workflow.load_pvt_config(root / "configs/polyp_pvt_512.yaml")
+    changed = {key for key in base if base[key] != high[key]}
+    assert changed == {"image_size", "output"}
+    assert high["image_size"] == 512

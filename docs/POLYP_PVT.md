@@ -130,3 +130,31 @@ medsam predict-polyp-pvt --config configs/polyp_pvt_1450.yaml --checkpoint runs/
 `<0.1% / 0.1–0.3% / 0.3–1% / 1–3%`。本命令只输出概率图，不自动选尺寸或报告最佳测试结果。
 测试集扫描用于诊断；最终参数选择应由训练池内验证集确定。
 本更新没有启动512训练，也没有证明高分辨率一定有效。
+
+## 512训练对照（第二步）
+
+新增`configs/polyp_pvt_512.yaml`。相对352主配置，仅改变`image_size`和独立输出目录；
+仍为1450张、99轮、batch16、FP32、相同预训练、AdamW、学习率、损失、种子和倍率。
+数据加载和多尺度缩放均从配置读取基础尺寸，512对应实际训练尺寸384/512/640。
+352原配置仍按官方32对齐规则对应256/352/448。两者均为每轮270次更新、总26730次更新；
+高分辨率计算量更大，因此是更新次数对齐，不是计算量对齐。
+
+```bash
+medsam train-polyp-pvt --config configs/polyp_pvt_512.yaml
+```
+
+新权重保存在`runs/polyp_pvt_1450_512_99ep/last.pt`，不会覆盖352权重。
+同一份512训练权重分别以352和512推理，一键完成五集×两个尺寸：
+
+```bash
+medsam sweep-polyp-pvt --config configs/polyp_pvt_512.yaml --checkpoint runs/polyp_pvt_1450_512_99ep/last.pt --manifest-dir data/polyp_test --output outputs/pvt_train512_infer352_512_raw --sizes 352 512 --normalization raw
+```
+
+若上一轮352训练实验使用`per-image`，本次也用`--normalization per-image`并换新输出目录。
+比较四种组合：352→352、352→512、512→352、512→512。训练不访问测试集，不据测试结果选轮。
+预测命令默认输入仍为352；512训练不会隐式改变预测尺寸，请明确传入所需尺寸。
+
+显存以最大640输入为准。如果batch16出现OOM，先停止，另建配置明确记录batch及独立输出目录；
+不自动降batch、不自动改精度。改变batch会同时改变BatchNorm和每轮更新数，
+该实验不能再称为只改变分辨率的严格对照。梯度累积也不等价于原始BatchNorm batch16。
+本项目暂未增加自动梯度累积或OOM恢复，避免隐式改变训练协议。

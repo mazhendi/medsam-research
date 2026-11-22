@@ -48,8 +48,10 @@ def load_pvt_config(path):
         raise ValueError("Expected architecture: polyp_pvt_b2")
     for key in ("upstream", "encoder_checkpoint", "train_manifest", "output"):
         cfg[key] = str((path.parent / cfg[key]).resolve())
-    if cfg.get("image_size") != 352 or cfg.get("augmentation") != "none":
-        raise ValueError("Released baseline requires image_size=352 and augmentation=none")
+    if cfg.get("image_size") not in {352, 512} or isinstance(cfg.get("image_size"), bool):
+        raise ValueError("Training image_size must be 352 or 512")
+    if cfg.get("augmentation") != "none":
+        raise ValueError("Baseline requires augmentation=none")
     for key in ("epochs", "batch_size", "expected_train_count"):
         if not isinstance(cfg.get(key), int) or cfg[key] < 1:
             raise ValueError(f"{key} must be a positive integer")
@@ -89,7 +91,8 @@ def train_pvt(config_path):
     model = build_polyp_pvt(cfg["upstream"], cfg["encoder_checkpoint"]).to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=cfg["learning_rate"],
                                   weight_decay=cfg["weight_decay"])
-    loader = DataLoader(PolypPVTDataset(records), batch_size=cfg["batch_size"],
+    loader = DataLoader(PolypPVTDataset(records, size=cfg["image_size"]),
+                        batch_size=cfg["batch_size"],
                         shuffle=True, num_workers=cfg.get("workers", 4),
                         pin_memory=device.type == "cuda", drop_last=True,
                         worker_init_fn=seed_worker, generator=torch.Generator().manual_seed(seed))
@@ -101,7 +104,9 @@ def train_pvt(config_path):
                       manifest_sha256=file_hash(cfg["train_manifest"]),
                       encoder_sha256=file_hash(cfg["encoder_checkpoint"]),
                       trainable_parameters=sum(p.numel() for p in model.parameters()),
-                      prediction="sum_of_two_logits", mask_resize="bilinear_soft_target")
+                      prediction="sum_of_two_logits", mask_resize="bilinear_soft_target",
+                      training_sizes=[scaled_size(cfg["image_size"], r) for r in cfg["scales"]],
+                      updates_per_epoch=len(loader) * len(cfg["scales"]))
     output.mkdir(parents=True)
     (output / "provenance.json").write_text(json.dumps(provenance, indent=2))
     steps = 0
@@ -111,7 +116,7 @@ def train_pvt(config_path):
         for images, target in loader:
             images, target = images.to(device), target.to(device)
             for rate in cfg["scales"]:
-                size = scaled_size(352, rate)
+                size = scaled_size(cfg["image_size"], rate)
                 x, y = images, target
                 if rate != 1:
                     x = F.interpolate(x, (size, size), mode="bilinear", align_corners=True)
