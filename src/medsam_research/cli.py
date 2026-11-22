@@ -8,6 +8,12 @@ from .data import audit_manifests
 def main(argv=None):
     parser = argparse.ArgumentParser(description="SAM 2.1 automatic binary segmentation baseline")
     sub = parser.add_subparsers(dest="command", required=True)
+    for name in ("train-local-background", "probe-local-background"):
+        command = sub.add_parser(name, help="Paired local-positive / random-or-hard background control")
+        command.add_argument("--config", required=True)
+        if name == "probe-local-background":
+            command.add_argument("--steps", type=int, default=2)
+            command.add_argument("--batch-size", type=int, default=1)
     for name in ("train-native-sam2", "probe-native-sam2"):
         command = sub.add_parser(name, help="Native SAM2 decoder with SCDS/SBCA/RCSR switches")
         command.add_argument("--config", required=True)
@@ -84,6 +90,15 @@ def main(argv=None):
             if name == "diagnose-region-shape":
                 command.add_argument("--window-size", type=int, default=8)
     args = parser.parse_args(argv)
+    if args.command in {"train-local-background", "probe-local-background"}:
+        from . import local_background_workflow as workflow
+
+        if args.command == "train-local-background":
+            report = workflow.train_local(args.config)
+        else:
+            report = workflow.probe_local(args.config, args.steps, args.batch_size)
+        print(json.dumps(report, indent=2))
+        return
     if args.command in {"train-native-sam2", "probe-native-sam2", "predict-native-sam2"}:
         from . import native_sam2_workflow as workflow
 

@@ -71,6 +71,8 @@ def _optimizer(model, cfg):
 
 def train_native(config_path):
     cfg = load_native_config(config_path)
+    if "local_background" in cfg:
+        raise ValueError("Use train-local-background for local-background configurations")
     output = Path(cfg["output"])
     if output.exists():
         raise FileExistsError(output)
