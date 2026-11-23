@@ -1,4 +1,6 @@
-> **最新无CFM配置**：`configs/polyp_pvt_slots_no_cfm.yaml`。原CFM已从该计算图移除，三层对齐拼接后仅用1×1压通道；A/B/C启用、A/B外层残差关闭。见[说明](docs/POLYP_PVT_SLOTS.md)。
+> **当前三头设计**：`configs/polyp_pvt_slots_three_head.yaml`。F1/F2各用独立A；B3/B4各接仅训练用辅助头；推理仅使用C后最终头。旧双头配置保留。运行与监督说明见[文档](docs/POLYP_PVT_SLOTS.md#当前三头设计两个辅助头--一个最终头)。
+
+> **旧双头无CFM配置**：`configs/polyp_pvt_slots_no_cfm.yaml`。原CFM已从该计算图移除，三层对齐拼接后仅用1×1压通道；A/B/C启用、A/B外层残差关闭。见[说明](docs/POLYP_PVT_SLOTS.md)。
 
 > **新增原拓扑接口版本**：保留原CFM和44网格双头，提供A/B/C单项替换。见[结构与运行顺序](docs/POLYP_PVT_SLOTS.md)。优先验证单项，尚无训练成绩。
 

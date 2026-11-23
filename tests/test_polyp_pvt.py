@@ -374,3 +374,48 @@ def test_prediction_rejects_cfm_switch_mismatch(tmp_path):
     torch.save(dict(architecture="polyp_pvt_slots_b2",model={},epoch=99),checkpoint)
     with pytest.raises(ValueError,match="slots.cfm"):
         workflow.predict_pvt(path,checkpoint,"unused.csv",tmp_path/"out")
+
+
+def test_three_head_slots_train_probe_predict_and_checkpoint_guard(tmp_path, monkeypatch):
+    class Heads(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.heads = nn.Conv2d(3, 3, 1)
+
+        def forward(self, x):
+            return dict(zip(("final", "aux3", "aux4"), self.heads(x).split(1, 1)))
+
+    path, cfg = write_config(tmp_path)
+    cfg.update(architecture="polyp_pvt_slots_b2", slots={"deep_supervision": True},
+               aux_weights=[.25, .75])
+    path.write_text(yaml.safe_dump(cfg))
+    write_data(tmp_path)
+    (tmp_path / "encoder.pth").write_bytes(b"probe")
+    monkeypatch.setattr(workflow, "build_configured_model", lambda *args: Heads())
+    assert workflow.probe_abc(path, steps=1, batch_size=2, image_size=64)["synthetic_probe"]
+    report = workflow.train_pvt(path)
+    checkpoint = torch.load(report["checkpoint"], weights_only=True)
+    assert checkpoint["provenance"]["prediction"] == "final_head_only"
+    model = Heads()
+    with torch.no_grad():
+        model.heads.weight.zero_()
+        model.heads.bias.copy_(torch.tensor([-2., 8., 8.]))
+    checkpoint["model"] = model.state_dict()
+    torch.save(checkpoint, report["checkpoint"])
+    output = tmp_path / "prediction"
+    workflow.predict_pvt(path, report["checkpoint"], tmp_path / "train.csv", output)
+    with Image.open(output / "000000.png") as image:
+        assert np.asarray(image).min() == np.asarray(image).max() == int(torch.sigmoid(torch.tensor(-2.)).item()*255)
+    cfg["slots"]["deep_supervision"] = False
+    path.write_text(yaml.safe_dump(cfg))
+    with pytest.raises(ValueError, match="slots.deep_supervision"):
+        workflow.predict_pvt(path, report["checkpoint"], "unused.csv", tmp_path / "bad")
+
+
+@pytest.mark.parametrize("weights", [[-1, .5], [.5], [float("nan"), .5], [True, .5]])
+def test_slots_reject_invalid_aux_weights(tmp_path, weights):
+    path, cfg = write_config(tmp_path)
+    cfg.update(architecture="polyp_pvt_slots_b2", aux_weights=weights)
+    path.write_text(yaml.safe_dump(cfg))
+    with pytest.raises(ValueError, match="aux_weights"):
+        workflow.load_pvt_config(path)

@@ -171,3 +171,68 @@ def test_no_cfm_config_changes_only_fusion_switch_and_output():
     assert {k for k in new["slots"] if old["slots"].get(k)!=new["slots"][k]}=={"cfm"}
     assert new["slots"]["cfm"] is False
     assert all(new["slots"][key] for key in ("a","b","c"))
+
+
+def test_f2_a_is_independent_preserves_heads_and_receives_gradients():
+    model = PolypPVTSlots(FakeBaseline(), a=True, a_f2=True, b=True, c=True,
+                         cfm=False, d_state=2, expand=1, backend="torch")
+    seen = []
+    model.a2.register_forward_pre_hook(lambda _, args: seen.append(tuple(args[0].shape)))
+    outputs = model(torch.randn(2, 3, 64, 64))
+    target = (torch.rand(2, 1, 64, 64) > .7).float()
+    assert seen == [(2, 128, 8, 8)]
+    assert model.a2 is not model.cim
+    assert not model.a2.residual and not model.cim.residual
+    assert len(outputs) == 2 and all(out.shape == target.shape for out in outputs)
+    sum(structure_loss(out, target) for out in outputs).backward()
+    for name, p in model.named_parameters():
+        assert p.grad is not None and torch.isfinite(p.grad).all(), name
+
+
+@pytest.mark.parametrize("options", [{"a_f2": "true"}, {"a_f2": True, "a": False}])
+def test_invalid_f2_a_options(options):
+    from medsam_research.polyp_pvt_slots import validate_slot_options
+    with pytest.raises(ValueError, match="a_f2"):
+        validate_slot_options(options)
+
+
+def test_f2_a_config_preserves_training_and_two_head_protocol():
+    root = Path(__file__).resolve().parents[1]
+    old = load_pvt_config(root / "configs/polyp_pvt_slots_no_cfm.yaml")
+    new = load_pvt_config(root / "configs/polyp_pvt_slots_no_cfm_a2.yaml")
+    assert {k for k in old if old[k] != new[k]} == {"output", "slots"}
+    assert new["slots"] == dict(old["slots"], a_f2=True)
+
+
+def test_three_heads_tap_native_b_outputs_and_eval_skips_auxiliary_heads():
+    from medsam_research.polyp_pvt_slots import slots_loss
+    model = PolypPVTSlots(FakeBaseline(), a=True, a_f2=True, b=True, c=True,
+                         cfm=False, deep_supervision=True, d_state=2,
+                         expand=1, backend="torch")
+    assert not hasattr(model, "out_CFM")
+    seen = []
+    for head in (model.aux3, model.aux4):
+        head.register_forward_pre_hook(lambda _, args: seen.append(tuple(args[0].shape)))
+    x = torch.randn(2, 3, 64, 64)
+    predictions = model(x)
+    assert seen == [(2, 32, 4, 4), (2, 32, 2, 2)]
+    assert set(predictions) == {"final", "aux3", "aux4"}
+    assert all(y.shape == (2, 1, 64, 64) for y in predictions.values())
+    target = (torch.rand(2, 1, 64, 64) > .7).float()
+    expected = (structure_loss(predictions["final"], target)
+                + .25 * structure_loss(predictions["aux3"], target)
+                + .75 * structure_loss(predictions["aux4"], target))
+    torch.testing.assert_close(slots_loss(predictions, target, (.25, .75)), expected)
+    expected.backward()
+    for name, parameter in model.named_parameters():
+        assert parameter.grad is not None and torch.isfinite(parameter.grad).all(), name
+    seen.clear()
+    model.eval()
+    with torch.inference_mode():
+        first = model(x)["final"]
+        for head in (model.aux3, model.aux4):
+            head.weight.fill_(100)
+            head.bias.fill_(100)
+        second = model(x)["final"]
+    assert seen == []
+    torch.testing.assert_close(first, second, rtol=0, atol=0)

@@ -105,3 +105,63 @@ medsam sweep-polyp-pvt --config configs/polyp_pvt_slots_no_cfm.yaml --checkpoint
 
 无CFM变体检查：39项相关测试通过；真实PVT结构（随机初始化）、352输入、batch2
 前向/反向通过，全部参数梯度有限；确认不注册CFM模块。尚未验证4090 batch16峰值及训练收益。
+
+
+## F1/F2 双 A 变体（无 CFM）
+
+新配置 `configs/polyp_pvt_slots_no_cfm_a2.yaml` 在无 CFM 版本上仅新增
+`slots.a_f2: true`，并使用独立输出目录。旧配置及检查点的结构不变。
+F1 经过 A1（64 通道），F2 经过独立 A2（128 通道），然后各自执行原通道投影。
+两套 A 不共享权重，外层残差均关闭；F3/F4 的 B 和 C 保持不变。
+
+双头监督从未删除：两个 44×44 预测分别上采样到训练输入尺寸，分别与 GT 计算
+structure loss，总损失等权相加。两头也都参与推理时的 logit 求和。
+它与早期 ABC 解码器中的 aux2/aux3 专用辅助头不同；本次没有额外增加预测头。
+新增 A2 后需要重新训练该变体，不能直接把旧 no_cfm 检查点当作新版完整检查点。
+预测会核对 a_f2 开关；历史配置缺省值为 false。
+
+```bash
+medsam train-polyp-pvt --config configs/polyp_pvt_slots_no_cfm_a2.yaml
+```
+
+保持 1450 张、基准输入 352、batch16、99 轮、三倍率更新与原无 CFM 版本一致。
+本修改尚无完整训练指标。相关单元测试 15 项通过，1 项官方源码集成测试未运行。
+
+
+## 当前三头设计：两个辅助头 + 一个最终头
+
+配置：`configs/polyp_pvt_slots_three_head.yaml`。F1/F2 先各自经过独立 A，
+F3/F4 投影后各自经过 B，F2/F3/F4 对齐拼接并压缩后与 F1 引导进入 C。
+无原 CFM，A/B 外层残差关闭。
+
+| 预测头 | 输入 | 352 输入时原生输出 | 训练 | 推理 |
+|---|---|---|---|---|
+| 辅助头1（代码 aux3） | B3 输出，上采样前 | 1×22×22 | 调整至352，与GT计算损失 | 不执行 |
+| 辅助头2（代码 aux4） | B4 输出，上采样前 | 1×11×11 | 调整至352，与GT计算损失 | 不执行 |
+| 最终头（out_SAM） | C 输出 | 1×44×44 | 调整至352，与GT计算损失 | 唯一输出 |
+
+删除旧汇合特征上的 out_CFM 预测头，总计三个1×1预测头。
+训练返回 final/aux3/aux4 三个 logit，损失为
+`structure(final, GT) + 0.5*structure(aux3, GT) + 0.5*structure(aux4, GT)`。
+structure 为加权 BCE + 加权 IoU。两个辅助头使用同一GT，无额外标注。
+`aux_weights: [0.5, 0.5]` 是可配置起始值，尚非实验证明最优。
+模型 eval 时仅返回 final，不执行辅助预测；导出保持先调整 logit 至原图尺寸，再 Sigmoid。
+不再相加多个预测头的 logit。所有参数在训练时学习。
+
+```bash
+medsam probe-abc-pvt --config configs/polyp_pvt_slots_three_head.yaml --batch-size 2 --image-size 352
+medsam train-polyp-pvt --config configs/polyp_pvt_slots_three_head.yaml
+medsam sweep-polyp-pvt --config configs/polyp_pvt_slots_three_head.yaml --checkpoint runs/polyp_pvt_slots_three_head/last.pt --manifest-dir data/polyp_test --output outputs/polyp_pvt_slots_three_head_raw --sizes 352 --normalization raw
+```
+
+若基线采用 per-image，评估时同步采用 per-image，不混用口径。
+仍为1450张、352基准输入、batch16、99轮、AdamW1e-4、weight_decay1e-4、
+种子42，保留原三倍率更新（256/352/448）；推理固定352。
+新检查点保存到独立 runs/polyp_pvt_slots_three_head，不覆盖旧成绩。
+`slots.deep_supervision` 默认 false，旧版双头行为与权重键保留。
+预测时校验 deep_supervision 与 a_f2 开关，拒绝混用不同拓扑的配置和检查点。
+新版需要重新训练；尚无完整训练成绩，不代表已超过基线。
+
+检查：48项相关测试通过、1项官方源码集成测试跳过；另手工运行真实官方PVTv2-B2
+随机初始化结构，352输入、batch2，训练三头前向和反向通过，全部参数梯度有限，
+eval仅返回final。尚未验证4090 batch16显存或完整训练收益。

@@ -41,6 +41,12 @@ class PolypPVTDataset(Dataset):
         return image_tensor(image), target
 
 
+def uses_final_head_only(cfg):
+    return (cfg["architecture"] in {"sds_adf_rtr_pvt_b2", "abc_pvt_b2"}
+            or (cfg["architecture"] == "polyp_pvt_slots_b2"
+                and cfg.get("slots", {}).get("deep_supervision", False)))
+
+
 def load_pvt_config(path):
     path = Path(path).resolve()
     cfg = yaml.safe_load(path.read_text(encoding="utf-8"))
@@ -50,6 +56,12 @@ def load_pvt_config(path):
         from .polyp_pvt_slots import validate_slot_options
 
         validate_slot_options(cfg.get("slots", {}))
+        import math
+        weights = cfg.get("aux_weights", [.5, .5])
+        if (not isinstance(weights, (list, tuple)) or len(weights) != 2
+                or any(isinstance(w, bool) or not isinstance(w, (int, float))
+                       or not math.isfinite(w) or w < 0 for w in weights)):
+            raise ValueError("aux_weights must contain two finite nonnegative numbers")
         if cfg.get("image_size") != 352:
             raise ValueError("Interface-controlled training protocol is fixed at 352")
     if cfg["architecture"] == "abc_pvt_b2":
@@ -171,7 +183,7 @@ def train_pvt(config_path):
                       manifest_sha256=file_hash(cfg["train_manifest"]),
                       encoder_sha256=file_hash(cfg["encoder_checkpoint"]),
                       trainable_parameters=sum(p.numel() for p in model.parameters()),
-                      prediction=("final_head_only" if cfg["architecture"] in {"sds_adf_rtr_pvt_b2", "abc_pvt_b2"}
+                      prediction=("final_head_only" if uses_final_head_only(cfg)
                                   else "sum_of_two_logits"), mask_resize="bilinear_soft_target",
                       training_sizes=[scaled_size(cfg["image_size"], r) for r in cfg["scales"]],
                       updates_per_epoch=len(loader) * len(cfg["scales"]))
@@ -204,6 +216,10 @@ def train_pvt(config_path):
                     from .abc_decoder import abc_loss
 
                     loss = abc_loss(predictions, y, cfg.get("aux_weight", .5))
+                elif cfg["architecture"] == "polyp_pvt_slots_b2":
+                    from .polyp_pvt_slots import slots_loss
+
+                    loss = slots_loss(predictions, y, cfg.get("aux_weights", [.5, .5]))
                 else:
                     loss = sum(structure_loss(logits, y) for logits in predictions)
                 if not torch.isfinite(loss):
@@ -255,7 +271,7 @@ def predict_pvt(config_path, checkpoint, manifest, output, normalization="raw",
                 raise ValueError(f"Checkpoint/config mismatch: {key}; use its training config")
     if cfg["architecture"] == "polyp_pvt_slots_b2":
         saved = state.get("provenance", {}).get("config", {}).get("slots", {})
-        for key, default in (("a", False), ("b", False), ("c", False),
+        for key, default in (("a", False), ("a_f2", False), ("deep_supervision", False), ("b", False), ("c", False),
                              ("a_residual", False), ("b_residual", False), ("cfm", True)):
             if cfg.get("slots", {}).get(key, default) != saved.get(key, default):
                 raise ValueError(f"Checkpoint/config mismatch: slots.{key}; use training config")
@@ -275,7 +291,7 @@ def predict_pvt(config_path, checkpoint, manifest, output, normalization="raw",
             image = handle.convert("RGB")
         x = image_tensor(image.resize((inference_size, inference_size), Image.Resampling.BILINEAR))
         predictions = model(x[None].to(device))
-        if cfg["architecture"] in {"sds_adf_rtr_pvt_b2", "abc_pvt_b2"}:
+        if uses_final_head_only(cfg):
             logits = predictions["final"]
         elif cfg["architecture"] == "subband_pvt_b2":
             logits = predictions["coarse"] + predictions["refined"]
@@ -302,7 +318,7 @@ def predict_pvt(config_path, checkpoint, manifest, output, normalization="raw",
         architecture=cfg["architecture"], checkpoint=str(Path(checkpoint).resolve()),
         checkpoint_sha256=hashlib.sha256(Path(checkpoint).read_bytes()).hexdigest(),
         manifest_sha256=file_hash(manifest), normalization=normalization, encoding="uint8_floor",
-        prediction=("sigmoid(upsample(final_logit))" if cfg["architecture"] in {"sds_adf_rtr_pvt_b2", "abc_pvt_b2"}
+        prediction=("sigmoid(upsample(final_logit))" if uses_final_head_only(cfg)
                     else "sigmoid(upsample(logit1+logit2))"), epoch=state["epoch"],
         upstream_commit=UPSTREAM_COMMIT, native_grid=True, count=len(records),
         inference_size=inference_size, training_image_size=state.get("provenance", {}).get(
@@ -399,7 +415,9 @@ def probe_abc(config_path, steps=1, batch_size=None, image_size=None):
         optimizer.zero_grad(set_to_none=True)
         predictions = model(images)
         if cfg["architecture"] == "polyp_pvt_slots_b2":
-            loss = sum(structure_loss(logits, target) for logits in predictions)
+            from .polyp_pvt_slots import slots_loss
+
+            loss = slots_loss(predictions, target, cfg.get("aux_weights", [.5, .5]))
         else:
             loss = abc_loss(predictions, target, cfg.get("aux_weight", .5))
         if not torch.isfinite(loss):
