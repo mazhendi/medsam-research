@@ -238,6 +238,11 @@ def predict_pvt(config_path, checkpoint, manifest, output, normalization="raw",
     state = torch.load(checkpoint, map_location="cpu", weights_only=True)
     if state.get("architecture") != cfg["architecture"]:
         raise ValueError("Checkpoint architecture must match the supplied config")
+    if cfg["architecture"] == "abc_pvt_b2":
+        saved_options = state.get("provenance", {}).get("config", {}).get("decoder", {})
+        for key in ("a_residual", "b_residual"):
+            if cfg.get("decoder", {}).get(key, True) != saved_options.get(key, True):
+                raise ValueError(f"Checkpoint/config mismatch: {key}; use its training config")
     model = build_configured_model(cfg)
     model.load_state_dict(state["model"], strict=True)
     device = torch.device(cfg.get("device", "cuda"))

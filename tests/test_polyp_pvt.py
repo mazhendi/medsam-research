@@ -323,3 +323,15 @@ def test_abc_workflow_probe_training_and_final_only_prediction(tmp_path, monkeyp
     with Image.open(output / "000000.png") as image:
         pixels = np.asarray(image)
     assert pixels.min() == pixels.max() == int(torch.sigmoid(torch.tensor(-2.)).item()*255)
+
+
+def test_prediction_rejects_parameterless_residual_config_mismatch(tmp_path):
+    path, cfg = write_config(tmp_path)
+    cfg.update(architecture="abc_pvt_b2", decoder={"width": 16, "a_residual": False,
+                                                 "b_residual": False})
+    path.write_text(yaml.safe_dump(cfg))
+    checkpoint = tmp_path / "old.pt"
+    # Old ABC checkpoints did not record flags; their behavior includes both residuals.
+    torch.save(dict(architecture="abc_pvt_b2", model={}, epoch=99), checkpoint)
+    with pytest.raises(ValueError, match="a_residual"):
+        workflow.predict_pvt(path, checkpoint, "unused.csv", tmp_path / "new_predictions")

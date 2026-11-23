@@ -151,3 +151,49 @@ def test_abc_configs_use_fixed_protocol_with_unique_outputs():
         assert cfg["architecture"] == "abc_pvt_b2" and cfg["image_size"] == 352
         assert cfg["batch_size"] == 16 and cfg["epochs"] == 99
         assert cfg["decoder"]["width"] == 32 and cfg["decoder"]["backend"] == "auto"
+
+
+@pytest.mark.parametrize("kind", ["a", "b"])
+def test_outer_residual_switch_preserves_transform_and_gradients(kind):
+    def make(residual):
+        if kind == "a":
+            return SpatialContextA(16, residual=residual)
+        return LocalMambaB(16, d_state=2, expand=1, backend="torch", residual=residual)
+
+    with_residual, without_residual = make(True), make(False)
+    without_residual.load_state_dict(with_residual.state_dict(), strict=True)
+    x = torch.randn(2, 16, 8, 8)
+    transformed = without_residual(x)
+    torch.testing.assert_close(with_residual(x), x+transformed)
+    assert with_residual.state_dict().keys() == without_residual.state_dict().keys()
+    transformed.square().mean().backward()
+    for name, parameter in without_residual.named_parameters():
+        assert parameter.grad is not None and torch.isfinite(parameter.grad).all(), name
+
+
+def test_no_residual_b_keeps_progressive_group_additions():
+    module = LocalMambaB(16, d_state=2, expand=1, backend="torch", residual=False)
+    module.project = nn.Identity()
+    module.fuse = nn.Identity()
+    for collection in (module.local, module.norm, module.mamba, module.mix):
+        for index in range(4):
+            collection[index] = nn.Identity()
+    x = torch.cat([torch.full((1, 4, 2, 2), float(i)) for i in (1, 2, 3, 4)], 1)
+    expected = torch.cat([torch.full((1, 4, 2, 2), float(i)) for i in (1, 3, 6, 10)], 1)
+    torch.testing.assert_close(module(x), expected)
+
+
+def test_full_model_without_outer_residuals_and_config_isolation():
+    root = Path(__file__).resolve().parents[1]
+    old = load_pvt_config(root / "configs/abc_pvt_full.yaml")
+    new = load_pvt_config(root / "configs/abc_pvt_no_residual.yaml")
+    assert {key for key in old if old[key] != new[key]} == {"decoder", "output"}
+    assert {key for key in new["decoder"] if old["decoder"].get(key) != new["decoder"][key]} == {
+        "a_residual", "b_residual"}
+    model = ABCPVT(FakePVT(), width=16, a_residual=False, b_residual=False,
+                   d_state=2, expand=1, backend="torch")
+    assert all(not m.residual for m in (*model.fine_blocks, *model.coarse_blocks))
+    output = model(torch.randn(2, 3, 64, 64))
+    loss = abc_loss(output, (torch.rand(2, 1, 64, 64)>.7).float())
+    loss.backward()
+    assert all(p.grad is not None and torch.isfinite(p.grad).all() for p in model.parameters())

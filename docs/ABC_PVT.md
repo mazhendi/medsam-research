@@ -127,3 +127,37 @@ A/B关闭时保留投影特征；C关闭时用常规3×3卷积融合。
 - 最新真实PVTv2-B2结构（随机初始化）在352、batch2下前向/反向通过，
   无缺失或非有限梯度；256/448前向通过。总参数24,993,609，实际使用8个torch扫描器。
 - 这些是CPU结构检查，未完成医学数据训练、CUDA fused核对或4090 batch16峰值验证。
+
+## A、B去外层残差的独立版本
+
+使用`configs/abc_pvt_no_residual.yaml`，明确设置：
+
+```yaml
+decoder:
+  # 其余字段见完整配置
+  a_residual: false
+  b_residual: false
+```
+
+A和B分别从`output = input + transform(input)`改为`output = transform(input)`。
+仅去掉各模块最外层的输入直连相加：A的两条分支与乘法、B的组间递进相加、
+Mamba选择性扫描内部D*u项全部保留；C、投影、解码器、监督及所有训练超参保持不变。
+没有删除PVT编码器内部的Transformer残差。
+
+```bash
+medsam probe-abc-pvt --config configs/abc_pvt_no_residual.yaml --batch-size 16 --image-size 448
+medsam train-polyp-pvt --config configs/abc_pvt_no_residual.yaml
+```
+
+新输出：`runs/abc_pvt_352_no_residual/last.pt`。原`abc_pvt_full.yaml`保留旧残差行为，
+以便重现已完成的0.8484实验，不覆盖其目录或权重。
+
+预测也必须使用no_residual配置，例如：
+
+```bash
+medsam sweep-polyp-pvt --config configs/abc_pvt_no_residual.yaml --checkpoint runs/abc_pvt_352_no_residual/last.pt --manifest-dir data/polyp_test --output outputs/abc_no_residual_raw --sizes 352 --normalization raw
+```
+
+若原实验用per-image，此处同步改成per-image。两种残差模式的参数键与尺寸相同，
+因此预测会额外核对训练配置中的残差开关，防止旧权重在新计算图上静默评估。
+旧检查点未记录开关时按旧行为true解释。去残差是否有效仍需同协议实验验证。

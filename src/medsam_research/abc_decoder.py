@@ -12,7 +12,7 @@ def _positive_integer(value):
 
 
 def validate_abc_options(options):
-    allowed = {"width", "a", "b", "c", "d_state", "d_conv", "expand", "backend"}
+    allowed = {"width", "a", "b", "c", "d_state", "d_conv", "expand", "backend", "a_residual", "b_residual"}
     if not isinstance(options, dict) or set(options)-allowed:
         raise ValueError("Unknown ABC decoder options")
     width = options.get("width", 32)
@@ -21,7 +21,7 @@ def validate_abc_options(options):
     for key in ("d_state", "d_conv", "expand"):
         if not _positive_integer(options.get(key, {"d_state":16, "d_conv":4, "expand":2}[key])):
             raise ValueError(f"{key} must be a positive integer")
-    for key in ("a", "b", "c"):
+    for key in ("a", "b", "c", "a_residual", "b_residual"):
         if not isinstance(options.get(key, True), bool):
             raise ValueError("ABC module switches must be boolean")
     if options.get("backend", "auto") not in {"auto", "torch", "fused"}:
@@ -30,8 +30,9 @@ def validate_abc_options(options):
 
 class SpatialContextA(nn.Module):
     """STPNet-inspired topology; dense DW3/5/7 replace large dilation branches."""
-    def __init__(self, width):
+    def __init__(self, width, residual=True):
         super().__init__()
+        self.residual = residual
         self.project = nn.Conv2d(width, width, 1)
         self.spatial = nn.Sequential(nn.Conv2d(width, width, 3, padding=1, groups=width),
                                      nn.Conv2d(width, width, 1), nn.Sigmoid())
@@ -44,7 +45,8 @@ class SpatialContextA(nn.Module):
         projected = self.project(x)
         spatial = self.spatial(projected)*projected
         contextual = self.context_mix(sum(branch(projected) for branch in self.context))*projected
-        return x+self.fuse(torch.cat((spatial, contextual), 1))
+        output = self.fuse(torch.cat((spatial, contextual), 1))
+        return x+output if self.residual else output
 
 
 class LocalMambaB(nn.Module):
@@ -53,8 +55,9 @@ class LocalMambaB(nn.Module):
     Each mixer scans a raster-serialized feature map in ONE direction. This is
     explicitly not SS2D, bidirectional Mamba or an official HAMB reproduction.
     """
-    def __init__(self, width, d_state=16, d_conv=4, expand=2, backend="auto"):
+    def __init__(self, width, d_state=16, d_conv=4, expand=2, backend="auto", residual=True):
         super().__init__()
+        self.residual = residual
         group = width//4
         self.project = nn.Conv2d(width, width, 1)
         self.local = nn.ModuleList(nn.Conv2d(group, group, k, padding=k//2, groups=group)
@@ -76,7 +79,8 @@ class LocalMambaB(nn.Module):
             tokens = self.norm[index](local.flatten(2).transpose(1, 2))
             mixed = self.mamba[index](tokens).transpose(1, 2).reshape(batch, channels, height, width)
             outputs.append(self.mix[index](mixed))
-        return x+self.fuse(torch.cat(outputs, 1))
+        output = self.fuse(torch.cat(outputs, 1))
+        return x+output if self.residual else output
 
 
 class ChannelSpatialC(nn.Module):
@@ -121,16 +125,18 @@ class LocalFusionControl(nn.Module):
 
 class ABCPVT(nn.Module):
     def __init__(self, backbone, width=32, a=True, b=True, c=True,
-                 d_state=16, d_conv=4, expand=2, backend="auto"):
+                 d_state=16, d_conv=4, expand=2, backend="auto",
+                 a_residual=True, b_residual=True):
         super().__init__()
         validate_abc_options(dict(width=width, a=a, b=b, c=c, d_state=d_state,
-                                  d_conv=d_conv, expand=expand, backend=backend))
+                                  d_conv=d_conv, expand=expand, backend=backend,
+                                  a_residual=a_residual, b_residual=b_residual))
         self.backbone = backbone
         self.project = nn.ModuleList(nn.Conv2d(ch, width, 1) for ch in (64, 128, 320, 512))
-        self.fine_blocks = nn.ModuleList(SpatialContextA(width) if a else nn.Identity()
+        self.fine_blocks = nn.ModuleList(SpatialContextA(width, residual=a_residual) if a else nn.Identity()
                                          for _ in range(2))
         self.coarse_blocks = nn.ModuleList(
-            LocalMambaB(width, d_state, d_conv, expand, backend) if b else nn.Identity()
+            LocalMambaB(width, d_state, d_conv, expand, backend, residual=b_residual) if b else nn.Identity()
             for _ in range(2))
         self.initialize = nn.Sequential(nn.Conv2d(width, width, 3, padding=1), nn.GELU())
         self.decoder = nn.ModuleList((ChannelSpatialC if c else LocalFusionControl)(width)
