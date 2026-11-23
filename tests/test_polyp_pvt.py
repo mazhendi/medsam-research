@@ -289,3 +289,37 @@ def test_latest_workflow_trains_aux_heads_but_predicts_final_only(tmp_path, monk
     assert pixels.min() == pixels.max() == int(torch.sigmoid(torch.tensor(-2.)).item()*255)
     metadata = json.loads((output / "provenance.json").read_text())
     assert metadata["prediction"] == "sigmoid(upsample(final_logit))"
+
+
+def test_abc_workflow_probe_training_and_final_only_prediction(tmp_path, monkeypatch):
+    class Heads(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.heads = nn.Conv2d(3, 3, 1)
+
+        def forward(self, x):
+            return dict(zip(("final", "aux2", "aux3"), self.heads(x).split(1, 1)))
+
+    path, cfg = write_config(tmp_path)
+    cfg.update(architecture="abc_pvt_b2", decoder={"width": 16}, aux_weight=.5)
+    path.write_text(yaml.safe_dump(cfg))
+    write_data(tmp_path)
+    (tmp_path / "encoder.pth").write_bytes(b"probe")
+    monkeypatch.setattr(workflow, "build_configured_model", lambda *args: Heads())
+    probe = workflow.probe_abc(path, steps=1, batch_size=2, image_size=64)
+    assert probe["synthetic_probe"] and probe["no_checkpoint_written"]
+    assert not (tmp_path / "run").exists()
+    report = workflow.train_pvt(path)
+    checkpoint = torch.load(report["checkpoint"], weights_only=True)
+    assert checkpoint["provenance"]["prediction"] == "final_head_only"
+    model = Heads()
+    with torch.no_grad():
+        model.heads.weight.zero_()
+        model.heads.bias.copy_(torch.tensor([-2., 8., 8.]))
+    checkpoint["model"] = model.state_dict()
+    torch.save(checkpoint, report["checkpoint"])
+    output = tmp_path / "prediction"
+    workflow.predict_pvt(path, report["checkpoint"], tmp_path / "train.csv", output)
+    with Image.open(output / "000000.png") as image:
+        pixels = np.asarray(image)
+    assert pixels.min() == pixels.max() == int(torch.sigmoid(torch.tensor(-2.)).item()*255)

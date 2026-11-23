@@ -44,8 +44,16 @@ class PolypPVTDataset(Dataset):
 def load_pvt_config(path):
     path = Path(path).resolve()
     cfg = yaml.safe_load(path.read_text(encoding="utf-8"))
-    if cfg.get("architecture") not in {"polyp_pvt_b2", "subband_pvt_b2", "sds_adf_rtr_pvt_b2"}:
+    if cfg.get("architecture") not in {"polyp_pvt_b2", "subband_pvt_b2", "sds_adf_rtr_pvt_b2", "abc_pvt_b2"}:
         raise ValueError("Unknown PVT architecture")
+    if cfg["architecture"] == "abc_pvt_b2":
+        from .abc_decoder import validate_abc_options
+
+        validate_abc_options(cfg.get("decoder", {}))
+        if cfg.get("image_size") != 352:
+            raise ValueError("ABC training protocol is fixed at 352")
+        if cfg.get("aux_weight", .5) < 0:
+            raise ValueError("aux_weight must be nonnegative")
     if cfg["architecture"] == "sds_adf_rtr_pvt_b2":
         options = cfg.get("decoder", {})
         if not isinstance(options, dict) or set(options)-{"width", "sds", "adf", "rtr", "tau"}:
@@ -106,6 +114,10 @@ def build_configured_model(cfg, encoder_checkpoint=None):
         from .scale_direction_decoder import ScaleDirectionPVT
 
         model = ScaleDirectionPVT(model.backbone, **cfg.get("decoder", {}))
+    elif cfg["architecture"] == "abc_pvt_b2":
+        from .abc_decoder import ABCPVT
+
+        model = ABCPVT(model.backbone, **cfg.get("decoder", {}))
     return model
 
 
@@ -149,7 +161,7 @@ def train_pvt(config_path):
                       manifest_sha256=file_hash(cfg["train_manifest"]),
                       encoder_sha256=file_hash(cfg["encoder_checkpoint"]),
                       trainable_parameters=sum(p.numel() for p in model.parameters()),
-                      prediction=("final_head_only" if cfg["architecture"] == "sds_adf_rtr_pvt_b2"
+                      prediction=("final_head_only" if cfg["architecture"] in {"sds_adf_rtr_pvt_b2", "abc_pvt_b2"}
                                   else "sum_of_two_logits"), mask_resize="bilinear_soft_target",
                       training_sizes=[scaled_size(cfg["image_size"], r) for r in cfg["scales"]],
                       updates_per_epoch=len(loader) * len(cfg["scales"]))
@@ -178,6 +190,10 @@ def train_pvt(config_path):
 
                     loss = scale_direction_loss(predictions, y, cfg.get("coarse_weight", .5),
                                                 cfg.get("intermediate_weight", .25))
+                elif cfg["architecture"] == "abc_pvt_b2":
+                    from .abc_decoder import abc_loss
+
+                    loss = abc_loss(predictions, y, cfg.get("aux_weight", .5))
                 else:
                     loss = sum(structure_loss(logits, y) for logits in predictions)
                 if not torch.isfinite(loss):
@@ -191,6 +207,8 @@ def train_pvt(config_path):
                 total += loss.item()
         row = dict(epoch=epoch, loss=total / updates, optimizer_steps=steps,
                    learning_rate=optimizer.param_groups[0]["lr"], updates=updates)
+        if cfg["architecture"] == "abc_pvt_b2":
+            row["scan_backends"] = scan_backend_counts(model)
         with (output / "history.jsonl").open("a", encoding="utf-8") as stream:
             stream.write(json.dumps(row) + "\n")
         print(json.dumps(row), flush=True)
@@ -236,7 +254,7 @@ def predict_pvt(config_path, checkpoint, manifest, output, normalization="raw",
             image = handle.convert("RGB")
         x = image_tensor(image.resize((inference_size, inference_size), Image.Resampling.BILINEAR))
         predictions = model(x[None].to(device))
-        if cfg["architecture"] == "sds_adf_rtr_pvt_b2":
+        if cfg["architecture"] in {"sds_adf_rtr_pvt_b2", "abc_pvt_b2"}:
             logits = predictions["final"]
         elif cfg["architecture"] == "subband_pvt_b2":
             logits = predictions["coarse"] + predictions["refined"]
@@ -263,13 +281,14 @@ def predict_pvt(config_path, checkpoint, manifest, output, normalization="raw",
         architecture=cfg["architecture"], checkpoint=str(Path(checkpoint).resolve()),
         checkpoint_sha256=hashlib.sha256(Path(checkpoint).read_bytes()).hexdigest(),
         manifest_sha256=file_hash(manifest), normalization=normalization, encoding="uint8_floor",
-        prediction=("sigmoid(upsample(final_logit))" if cfg["architecture"] == "sds_adf_rtr_pvt_b2"
+        prediction=("sigmoid(upsample(final_logit))" if cfg["architecture"] in {"sds_adf_rtr_pvt_b2", "abc_pvt_b2"}
                     else "sigmoid(upsample(logit1+logit2))"), epoch=state["epoch"],
         upstream_commit=UPSTREAM_COMMIT, native_grid=True, count=len(records),
         inference_size=inference_size, training_image_size=state.get("provenance", {}).get(
             "config", {}).get("image_size"), device=str(device), precision="fp32",
         elapsed_seconds=elapsed, seconds_per_image=elapsed / len(records) if records else None,
         peak_cuda_allocated_bytes=peak_memory,
+        scan_backends=scan_backend_counts(model) if cfg["architecture"] == "abc_pvt_b2" else None,
         timing_scope="image loading, preprocessing, forward, native resize, PNG save; includes warmup"
     ), indent=2))
     return dict(output=str(output), count=len(records), inference_size=inference_size)
@@ -320,3 +339,59 @@ def sweep_pvt(config_path, checkpoint, manifest_dir, output, sizes=(352, 448, 51
             report["results"].append(dict(dataset=name, **result))
             (output / "sweep.json").write_text(json.dumps(report, indent=2))
     return report
+
+
+def scan_backend_counts(model):
+    from collections import Counter
+
+    return dict(Counter(m.last_backend for m in model.modules()
+                        if getattr(m, "last_backend", None) is not None))
+
+
+def probe_abc(config_path, steps=1, batch_size=None, image_size=None):
+    """Synthetic full-resolution optimizer probe; writes no model or dataset files."""
+    from .abc_decoder import abc_loss
+
+    cfg = load_pvt_config(config_path)
+    if cfg["architecture"] != "abc_pvt_b2":
+        raise ValueError("probe-abc-pvt requires an ABC config")
+    batch_size = cfg["batch_size"] if batch_size is None else batch_size
+    image_size = max(scaled_size(352, rate) for rate in cfg["scales"]) if image_size is None else image_size
+    validate_inference_size(image_size)
+    if batch_size < 2 or steps < 1:
+        raise ValueError("probe batch_size must be >=2 and steps >=1")
+    device = torch.device(cfg.get("device", "cuda"))
+    if device.type == "cuda" and not torch.cuda.is_available():
+        raise RuntimeError("CUDA unavailable")
+    torch.manual_seed(cfg.get("seed", 42))
+    model = build_configured_model(cfg, cfg["encoder_checkpoint"]).to(device).train()
+    optimizer = torch.optim.AdamW(model.parameters(), lr=cfg["learning_rate"],
+                                  weight_decay=cfg["weight_decay"])
+    images = torch.randn(batch_size, 3, image_size, image_size, device=device)
+    target = (torch.rand(batch_size, 1, image_size, image_size, device=device)>.7).float()
+    if device.type == "cuda":
+        torch.cuda.synchronize(device)
+        torch.cuda.reset_peak_memory_stats(device)
+    started = time.perf_counter()
+    losses = []
+    for _ in range(steps):
+        optimizer.zero_grad(set_to_none=True)
+        loss = abc_loss(model(images), target, cfg.get("aux_weight", .5))
+        if not torch.isfinite(loss):
+            raise RuntimeError("Nonfinite probe loss")
+        loss.backward()
+        gradients = [p.grad for p in model.parameters() if p.requires_grad]
+        if any(g is None or not torch.isfinite(g).all() for g in gradients):
+            raise RuntimeError("Probe found missing or nonfinite gradients; use aux_weight>0")
+        torch.nn.utils.clip_grad_value_(model.parameters(), cfg["gradient_clip"])
+        optimizer.step()
+        losses.append(loss.item())
+    if device.type == "cuda":
+        torch.cuda.synchronize(device)
+    return dict(architecture=cfg["architecture"], device=str(device), batch_size=batch_size,
+                image_size=image_size, steps=steps, losses=losses,
+                parameters=sum(p.numel() for p in model.parameters()),
+                scan_backends=scan_backend_counts(model), elapsed_seconds=time.perf_counter()-started,
+                peak_cuda_allocated_bytes=(torch.cuda.max_memory_allocated(device)
+                                           if device.type == "cuda" else None),
+                synthetic_probe=True, no_checkpoint_written=True)

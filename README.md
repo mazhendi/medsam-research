@@ -1,3 +1,5 @@
+> **最新A/B/C候选已实现**：STPNet-inspired A、局部卷积前置Mamba B、SSFM-inspired通道—空间选择C。见[ABC运行说明与Mamba后端检查](docs/ABC_PVT.md)。先运行448尺寸探针；尚无完整训练成绩。
+
 > **最新待验证设计：SDS＋ADF＋RTR**，已接入独立配置，最终头单独推理。见[训练、预测与三模块对照](docs/SDS_ADF_RTR.md)。旧SCSI/BCSC实现保留作历史实验。
 
 > **新增待验证架构**：SCSI＋BCSC＋区域—边界解码器，完整替换原解码部分。见[运行与消融说明](docs/SUBBAND_PVT.md)。原版Polyp-PVT继续作为主基线。

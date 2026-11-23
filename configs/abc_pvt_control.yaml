@@ -1,0 +1,33 @@
+# Latest approved A/B/C design. B uses a selective Mamba-1 SSM.
+architecture: abc_pvt_b2
+upstream: ../vendor/Polyp-PVT
+encoder_checkpoint: ../checkpoints/pvt_v2_b2.pth
+train_manifest: ../data/polyp_full/train_all.csv
+output: ../runs/abc_pvt_352_control
+expected_train_count: 1450
+image_size: 352
+# Upstream --epoch=100 executes range(1,100), i.e. 99 complete epochs.
+epochs: 99
+batch_size: 16
+learning_rate: 0.0001
+weight_decay: 0.0001
+gradient_clip: 0.5
+# Upstream default augmentation=False; three-scale updates remain enabled.
+augmentation: none
+scales: [0.75, 1.0, 1.25]
+workers: 4
+seed: 42
+device: cuda
+
+# Final loss + 0.5 for each D2/D3 auxiliary head. Final-head-only inference.
+aux_weight: 0.5
+decoder:
+  width: 32
+  a: false
+  b: false
+  c: false
+  d_state: 16
+  d_conv: 4
+  expand: 2
+  # auto: fused mamba-ssm scan if CUDA extension is present, else portable torch scan.
+  backend: auto
