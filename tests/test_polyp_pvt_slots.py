@@ -236,3 +236,35 @@ def test_three_heads_tap_native_b_outputs_and_eval_skips_auxiliary_heads():
         second = model(x)["final"]
     assert seen == []
     torch.testing.assert_close(first, second, rtol=0, atol=0)
+
+
+def test_auxiliary_ablation_configs_only_change_weights_and_output():
+    root = Path(__file__).resolve().parents[1]
+    old = load_pvt_config(root / 'configs/polyp_pvt_slots_three_head.yaml')
+    outputs = {old['output']}
+    for name, weights in [('weak_aux', [.2, .1]), ('no_aux', [0., 0.])]:
+        new = load_pvt_config(root / f'configs/polyp_pvt_slots_three_head_{name}.yaml')
+        assert {key for key in old if new[key] != old[key]} == {'aux_weights', 'output'}
+        assert new['aux_weights'] == weights
+        assert new['slots'].get('b_scan', 'raster') == 'raster'
+        assert new['slots'].get('fusion', 'aligned') == 'aligned'
+        outputs.add(new['output'])
+    assert len(outputs) == 3
+
+
+def test_no_aux_loss_equals_final_only_and_aux_heads_have_zero_gradient():
+    from medsam_research.polyp_pvt_slots import slots_loss
+    model = PolypPVTSlots(FakeBaseline(), a=True, a_f2=True, b=True, c=True,
+                         cfm=False, deep_supervision=True, d_state=2, expand=1, backend='torch')
+    outputs = model(torch.randn(2,3,64,64))
+    target = (torch.rand(2,1,64,64) > .7).float()
+    loss = slots_loss(outputs, target, (0., 0.))
+    torch.testing.assert_close(loss, structure_loss(outputs['final'], target), rtol=0, atol=0)
+    loss.backward()
+    for head in (model.aux3, model.aux4):
+        for parameter in head.parameters():
+            assert parameter.grad is not None and torch.count_nonzero(parameter.grad) == 0
+    for name, parameter in model.named_parameters():
+        assert parameter.grad is not None and torch.isfinite(parameter.grad).all(), name
+    assert model.out_SAM.weight.grad.abs().sum() > 0
+    assert model.b4.fuse.weight.grad.abs().sum() > 0
