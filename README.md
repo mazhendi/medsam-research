@@ -1,3 +1,5 @@
+> **新增独立优化配置**：`configs/polyp_pvt_slots_three_head_axial_progressive.yaml`，仅修改B扫描与逐级融合，旧三头配置/输出保留；附两项单独消融配置。见[运行说明](docs/AXIAL_PROGRESSIVE_SLOTS.md)。
+
 > **当前三头设计**：`configs/polyp_pvt_slots_three_head.yaml`。F1/F2各用独立A；B3/B4各接仅训练用辅助头；推理仅使用C后最终头。旧双头配置保留。运行与监督说明见[文档](docs/POLYP_PVT_SLOTS.md#当前三头设计两个辅助头--一个最终头)。
 
 > **旧双头无CFM配置**：`configs/polyp_pvt_slots_no_cfm.yaml`。原CFM已从该计算图移除，三层对齐拼接后仅用1×1压通道；A/B/C启用、A/B外层残差关闭。见[说明](docs/POLYP_PVT_SLOTS.md)。

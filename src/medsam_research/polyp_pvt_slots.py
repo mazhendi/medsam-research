@@ -13,6 +13,14 @@ from .abc_decoder import ChannelSpatialC, LocalMambaB, SpatialContextA, validate
 def validate_slot_options(options):
     if not isinstance(options, dict):
         raise ValueError("slots must be a mapping")
+    if options.get("b_scan", "raster") not in {"raster", "axial"}:
+        raise ValueError("b_scan must be raster or axial")
+    if options.get("fusion", "aligned") not in {"aligned", "progressive"}:
+        raise ValueError("fusion must be aligned or progressive")
+    if options.get("b_scan", "raster") == "axial" and not options.get("b", False):
+        raise ValueError("axial b_scan requires b=True")
+    if options.get("fusion", "aligned") == "progressive" and options.get("cfm", True):
+        raise ValueError("progressive fusion requires cfm=False")
     if not isinstance(options.get("cfm", True), bool):
         raise ValueError("cfm must be boolean")
     if not isinstance(options.get("deep_supervision", False), bool):
@@ -21,7 +29,7 @@ def validate_slot_options(options):
         raise ValueError("a_f2 must be boolean")
     if options.get("a_f2", False) and not options.get("a", False):
         raise ValueError("a_f2 requires a=True")
-    validate_abc_options({key: value for key, value in options.items() if key not in {"cfm", "a_f2", "deep_supervision"}})
+    validate_abc_options({key: value for key, value in options.items() if key not in {"cfm", "a_f2", "deep_supervision", "b_scan", "fusion"}})
     if options.get("width", 32) != 32:
         raise ValueError("Original Polyp-PVT interfaces require width=32")
 
@@ -42,11 +50,11 @@ class AlignedConcatFusion(nn.Module):
 class PolypPVTSlots(nn.Module):
     def __init__(self, baseline, a=False, b=False, c=False, width=32,
                  a_residual=False, b_residual=False, d_state=16, d_conv=4,
-                 expand=2, backend="auto", cfm=True, a_f2=False, deep_supervision=False):
+                 expand=2, backend="auto", cfm=True, a_f2=False, deep_supervision=False, b_scan="raster", fusion="aligned"):
         super().__init__()
         validate_slot_options(dict(a=a, b=b, c=c, width=width, a_residual=a_residual,
                                    b_residual=b_residual, d_state=d_state, d_conv=d_conv,
-                                   expand=expand, backend=backend, cfm=cfm, a_f2=a_f2, deep_supervision=deep_supervision))
+                                   expand=expand, backend=backend, cfm=cfm, a_f2=a_f2, deep_supervision=deep_supervision, b_scan=b_scan, fusion=fusion))
         self.use_a, self.use_c, self.use_cfm = a, c, cfm
         self.deep_supervision = deep_supervision
         self.backbone = baseline.backbone
@@ -61,7 +69,11 @@ class PolypPVTSlots(nn.Module):
         if cfm:
             self.CFM = baseline.CFM
         else:
-            self.aligned_fusion = AlignedConcatFusion(width)
+            if fusion == "progressive":
+                from .axial_progressive import ProgressiveFusion
+                self.aligned_fusion = ProgressiveFusion(width)
+            else:
+                self.aligned_fusion = AlignedConcatFusion(width)
         if a:
             self.cim = SpatialContextA(64, residual=a_residual)
         else:
@@ -69,8 +81,10 @@ class PolypPVTSlots(nn.Module):
         if a_f2:
             self.a2 = SpatialContextA(128, residual=a_residual)
         if b:
-            self.b3 = LocalMambaB(32, d_state, d_conv, expand, backend, residual=b_residual)
-            self.b4 = LocalMambaB(32, d_state, d_conv, expand, backend, residual=b_residual)
+            from .axial_progressive import AxialLocalMambaB
+            block = AxialLocalMambaB if b_scan == "axial" else LocalMambaB
+            self.b3 = block(32, d_state, d_conv, expand, backend, residual=b_residual)
+            self.b4 = block(32, d_state, d_conv, expand, backend, residual=b_residual)
         else:
             self.b3, self.b4 = nn.Identity(), nn.Identity()
         self.SAM = ChannelSpatialC(32) if c else baseline.SAM

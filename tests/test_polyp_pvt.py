@@ -419,3 +419,17 @@ def test_slots_reject_invalid_aux_weights(tmp_path, weights):
     path.write_text(yaml.safe_dump(cfg))
     with pytest.raises(ValueError, match="aux_weights"):
         workflow.load_pvt_config(path)
+
+
+@pytest.mark.parametrize('key,value,slots', [('b_scan','axial',{'b':True}),
+                                          ('fusion','progressive',{'cfm':False})])
+def test_prediction_rejects_scan_or_fusion_mismatch(tmp_path,key,value,slots):
+    path,cfg=write_config(tmp_path)
+    old_slots=slots.copy()
+    cfg.update(architecture='polyp_pvt_slots_b2',slots=dict(slots,**{key:value}))
+    path.write_text(yaml.safe_dump(cfg))
+    checkpoint=tmp_path/'old.pt'
+    torch.save(dict(architecture='polyp_pvt_slots_b2', model={}, epoch=99,
+                    provenance={'config':{'slots':old_slots}}), checkpoint)
+    with pytest.raises(ValueError,match=f'slots.{key}'):
+        workflow.predict_pvt(path,checkpoint,'unused.csv',tmp_path/'out')
