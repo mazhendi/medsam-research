@@ -73,3 +73,35 @@ control状态字典键与原模型相同，但项目检查点架构标签不同�
 全套195项测试通过。真实官方PVT结构的control在256/352/448输入与原版同权重输出
 逐元素一致；a_only和full在真实PVT结构（随机初始化）、352输入、batch2下前向与反向通过，
 无缺失或非有限梯度。以上不代表已完成训练或验证4090 batch16显存。
+
+## 最新变体：去掉原CFM
+
+`configs/polyp_pvt_slots_no_cfm.yaml`开启A/B/C，并设置`slots.cfm: false`。
+模型中不注册原CFM，不执行其级联乘法与多层卷积。
+F2/F3/F4的投影特征分别为32×44×44、32×22×22、32×11×11，
+较粗两层直接双线性对齐到44网格，三层拼接96通道，再用单个1×1卷积压到32通道。
+这是汇合三层特征的最小连接操作，不是改名后的原CFM。
+
+浅层仍为F1→A→32通道→44网格引导，C融合该引导与深层汇合特征。
+两个44网格预测头、双头结构损失与logit求和推理保留，A/B外层残差仍关闭。
+C是自定义选择融合，不保留原SAM；编码器各层投影与原预测头保留。
+源码中的`out_CFM`沿用原预测头参数名，不代表CFM模块仍在。
+
+```bash
+medsam probe-abc-pvt --config configs/polyp_pvt_slots_no_cfm.yaml --batch-size 16 --image-size 448
+medsam train-polyp-pvt --config configs/polyp_pvt_slots_no_cfm.yaml
+```
+
+保存到`runs/polyp_pvt_slots_no_cfm/last.pt`，其他配置继续保留有CFM的原行为。
+预测需使用相同no_cfm配置：
+
+```bash
+medsam sweep-polyp-pvt --config configs/polyp_pvt_slots_no_cfm.yaml --checkpoint runs/polyp_pvt_slots_no_cfm/last.pt --manifest-dir data/polyp_test --output outputs/polyp_pvt_slots_no_cfm_raw --sizes 352 --normalization raw
+```
+
+概率归一化继续与基线一致；若用per-image请同步更改参数及输出目录。
+本配置仅相对`polyp_pvt_slots_full.yaml`去掉原CFM，其余训练和模块开关一致。
+尚无完整训练结果，不能把结构删除直接认定为性能提升。
+
+无CFM变体检查：39项相关测试通过；真实PVT结构（随机初始化）、352输入、batch2
+前向/反向通过，全部参数梯度有限；确认不注册CFM模块。尚未验证4090 batch16峰值及训练收益。

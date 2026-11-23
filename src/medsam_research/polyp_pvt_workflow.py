@@ -255,8 +255,9 @@ def predict_pvt(config_path, checkpoint, manifest, output, normalization="raw",
                 raise ValueError(f"Checkpoint/config mismatch: {key}; use its training config")
     if cfg["architecture"] == "polyp_pvt_slots_b2":
         saved = state.get("provenance", {}).get("config", {}).get("slots", {})
-        for key in ("a", "b", "c", "a_residual", "b_residual"):
-            if cfg.get("slots", {}).get(key, False) != saved.get(key, False):
+        for key, default in (("a", False), ("b", False), ("c", False),
+                             ("a_residual", False), ("b_residual", False), ("cfm", True)):
+            if cfg.get("slots", {}).get(key, default) != saved.get(key, default):
                 raise ValueError(f"Checkpoint/config mismatch: slots.{key}; use training config")
     model = build_configured_model(cfg)
     model.load_state_dict(state["model"], strict=True)

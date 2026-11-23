@@ -125,3 +125,49 @@ def test_real_official_all_off_exact_parity():
             x=torch.randn(1,3,size,size)
             for expected,actual in zip(baseline(x),model(x)):
                 torch.testing.assert_close(expected,actual,rtol=0,atol=0)
+
+
+def test_minimal_fusion_is_only_aligned_concat_and_pointwise_projection():
+    from medsam_research.polyp_pvt_slots import AlignedConcatFusion
+
+    module=AlignedConcatFusion(2)
+    deep=torch.randn(1,2,2,2)
+    middle=torch.randn(1,2,4,4)
+    fine=torch.randn(1,2,8,8)
+    with torch.no_grad():
+        module.projection.weight.zero_()
+        module.projection.bias.zero_()
+        module.projection.weight[0,0,0,0]=1
+        module.projection.weight[1,2,0,0]=1
+        module.projection.weight[1,5,0,0]=1
+    expected=torch.cat((F.interpolate(deep,(8,8),mode="bilinear",align_corners=True)[:,:1],
+                         F.interpolate(middle,(8,8),mode="bilinear",align_corners=True)[:,:1]
+                         +fine[:,1:2]),1)
+    torch.testing.assert_close(module(deep,middle,fine),expected)
+
+
+@pytest.mark.parametrize("enabled",[False,True])
+def test_no_cfm_removes_module_and_keeps_two_head_gradients(enabled):
+    baseline=FakeBaseline()
+    model=PolypPVTSlots(baseline,a=enabled,b=enabled,c=enabled,cfm=False,
+                        d_state=2,expand=1,backend="torch")
+    assert not hasattr(model,"CFM")
+    assert not any(isinstance(m,FakeCFM) for m in model.modules())
+    assert not any(key.startswith("CFM.") for key in model.state_dict())
+    assert hasattr(model,"aligned_fusion")
+    targets=(torch.rand(2,1,64,64)>.7).float()
+    outputs=model(torch.randn(2,3,64,64))
+    assert len(outputs)==2 and all(v.shape==targets.shape for v in outputs)
+    sum(structure_loss(v,targets) for v in outputs).backward()
+    for name,p in model.named_parameters():
+        assert p.grad is not None and torch.isfinite(p.grad).all(),name
+
+
+def test_no_cfm_config_changes_only_fusion_switch_and_output():
+    root=Path(__file__).resolve().parents[1]
+    old=load_pvt_config(root/"configs/polyp_pvt_slots_full.yaml")
+    new=load_pvt_config(root/"configs/polyp_pvt_slots_no_cfm.yaml")
+    assert {k for k in old if old[k]!=new[k]}=={"output","slots"}
+    assert {k for k in new["slots"] if old["slots"].get(k)!=new["slots"][k]}=={"cfm"}
+    assert new["slots"]["cfm"] is False
+    assert all(new["slots"][key] for key in ("a","b","c"))

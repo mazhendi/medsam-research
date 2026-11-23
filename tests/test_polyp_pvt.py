@@ -364,3 +364,13 @@ def test_original_topology_variant_keeps_two_head_train_and_inference(tmp_path, 
     path.write_text(yaml.safe_dump(cfg))
     with pytest.raises(ValueError,match="a_residual"):
         workflow.predict_pvt(path,report["checkpoint"],tmp_path/"train.csv",tmp_path/"bad")
+
+
+def test_prediction_rejects_cfm_switch_mismatch(tmp_path):
+    path,cfg=write_config(tmp_path)
+    cfg.update(architecture="polyp_pvt_slots_b2",slots={"cfm":False})
+    path.write_text(yaml.safe_dump(cfg))
+    checkpoint=tmp_path/"with_cfm.pt"
+    torch.save(dict(architecture="polyp_pvt_slots_b2",model={},epoch=99),checkpoint)
+    with pytest.raises(ValueError,match="slots.cfm"):
+        workflow.predict_pvt(path,checkpoint,"unused.csv",tmp_path/"out")

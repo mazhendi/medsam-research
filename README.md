@@ -1,3 +1,5 @@
+> **最新无CFM配置**：`configs/polyp_pvt_slots_no_cfm.yaml`。原CFM已从该计算图移除，三层对齐拼接后仅用1×1压通道；A/B/C启用、A/B外层残差关闭。见[说明](docs/POLYP_PVT_SLOTS.md)。
+
 > **新增原拓扑接口版本**：保留原CFM和44网格双头，提供A/B/C单项替换。见[结构与运行顺序](docs/POLYP_PVT_SLOTS.md)。优先验证单项，尚无训练成绩。
 
 > **A/B去外层残差变体**：使用`configs/abc_pvt_no_residual.yaml`，训练/预测均须配套该配置；原full配置保留旧行为。见[说明](docs/ABC_PVT.md)。
