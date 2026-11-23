@@ -1,0 +1,33 @@
+# Original Polyp-PVT topology, controlled A/B/C interface changes.
+architecture: polyp_pvt_slots_b2
+upstream: ../vendor/Polyp-PVT
+encoder_checkpoint: ../checkpoints/pvt_v2_b2.pth
+train_manifest: ../data/polyp_full/train_all.csv
+output: ../runs/polyp_pvt_slots_full
+expected_train_count: 1450
+image_size: 352
+# Upstream --epoch=100 executes range(1,100), i.e. 99 complete epochs.
+epochs: 99
+batch_size: 16
+learning_rate: 0.0001
+weight_decay: 0.0001
+gradient_clip: 0.5
+# Upstream default augmentation=False; three-scale updates remain enabled.
+augmentation: none
+scales: [0.75, 1.0, 1.25]
+workers: 4
+seed: 42
+device: cuda
+
+# Original CFM and two 44-grid prediction heads are retained in ALL variants.
+slots:
+  width: 32
+  a: true
+  b: true
+  c: true
+  a_residual: false
+  b_residual: false
+  d_state: 16
+  d_conv: 4
+  expand: 2
+  backend: auto

@@ -44,8 +44,14 @@ class PolypPVTDataset(Dataset):
 def load_pvt_config(path):
     path = Path(path).resolve()
     cfg = yaml.safe_load(path.read_text(encoding="utf-8"))
-    if cfg.get("architecture") not in {"polyp_pvt_b2", "subband_pvt_b2", "sds_adf_rtr_pvt_b2", "abc_pvt_b2"}:
+    if cfg.get("architecture") not in {"polyp_pvt_b2", "subband_pvt_b2", "sds_adf_rtr_pvt_b2", "abc_pvt_b2", "polyp_pvt_slots_b2"}:
         raise ValueError("Unknown PVT architecture")
+    if cfg["architecture"] == "polyp_pvt_slots_b2":
+        from .polyp_pvt_slots import validate_slot_options
+
+        validate_slot_options(cfg.get("slots", {}))
+        if cfg.get("image_size") != 352:
+            raise ValueError("Interface-controlled training protocol is fixed at 352")
     if cfg["architecture"] == "abc_pvt_b2":
         from .abc_decoder import validate_abc_options
 
@@ -118,6 +124,10 @@ def build_configured_model(cfg, encoder_checkpoint=None):
         from .abc_decoder import ABCPVT
 
         model = ABCPVT(model.backbone, **cfg.get("decoder", {}))
+    elif cfg["architecture"] == "polyp_pvt_slots_b2":
+        from .polyp_pvt_slots import PolypPVTSlots
+
+        model = PolypPVTSlots(model, **cfg.get("slots", {}))
     return model
 
 
@@ -207,7 +217,7 @@ def train_pvt(config_path):
                 total += loss.item()
         row = dict(epoch=epoch, loss=total / updates, optimizer_steps=steps,
                    learning_rate=optimizer.param_groups[0]["lr"], updates=updates)
-        if cfg["architecture"] == "abc_pvt_b2":
+        if cfg["architecture"] in {"abc_pvt_b2", "polyp_pvt_slots_b2"}:
             row["scan_backends"] = scan_backend_counts(model)
         with (output / "history.jsonl").open("a", encoding="utf-8") as stream:
             stream.write(json.dumps(row) + "\n")
@@ -243,6 +253,11 @@ def predict_pvt(config_path, checkpoint, manifest, output, normalization="raw",
         for key in ("a_residual", "b_residual"):
             if cfg.get("decoder", {}).get(key, True) != saved_options.get(key, True):
                 raise ValueError(f"Checkpoint/config mismatch: {key}; use its training config")
+    if cfg["architecture"] == "polyp_pvt_slots_b2":
+        saved = state.get("provenance", {}).get("config", {}).get("slots", {})
+        for key in ("a", "b", "c", "a_residual", "b_residual"):
+            if cfg.get("slots", {}).get(key, False) != saved.get(key, False):
+                raise ValueError(f"Checkpoint/config mismatch: slots.{key}; use training config")
     model = build_configured_model(cfg)
     model.load_state_dict(state["model"], strict=True)
     device = torch.device(cfg.get("device", "cuda"))
@@ -293,7 +308,7 @@ def predict_pvt(config_path, checkpoint, manifest, output, normalization="raw",
             "config", {}).get("image_size"), device=str(device), precision="fp32",
         elapsed_seconds=elapsed, seconds_per_image=elapsed / len(records) if records else None,
         peak_cuda_allocated_bytes=peak_memory,
-        scan_backends=scan_backend_counts(model) if cfg["architecture"] == "abc_pvt_b2" else None,
+        scan_backends=scan_backend_counts(model) if cfg["architecture"] in {"abc_pvt_b2", "polyp_pvt_slots_b2"} else None,
         timing_scope="image loading, preprocessing, forward, native resize, PNG save; includes warmup"
     ), indent=2))
     return dict(output=str(output), count=len(records), inference_size=inference_size)
@@ -358,8 +373,8 @@ def probe_abc(config_path, steps=1, batch_size=None, image_size=None):
     from .abc_decoder import abc_loss
 
     cfg = load_pvt_config(config_path)
-    if cfg["architecture"] != "abc_pvt_b2":
-        raise ValueError("probe-abc-pvt requires an ABC config")
+    if cfg["architecture"] not in {"abc_pvt_b2", "polyp_pvt_slots_b2"}:
+        raise ValueError("probe-abc-pvt requires an ABC or interface-controlled config")
     batch_size = cfg["batch_size"] if batch_size is None else batch_size
     image_size = max(scaled_size(352, rate) for rate in cfg["scales"]) if image_size is None else image_size
     validate_inference_size(image_size)
@@ -381,7 +396,11 @@ def probe_abc(config_path, steps=1, batch_size=None, image_size=None):
     losses = []
     for _ in range(steps):
         optimizer.zero_grad(set_to_none=True)
-        loss = abc_loss(model(images), target, cfg.get("aux_weight", .5))
+        predictions = model(images)
+        if cfg["architecture"] == "polyp_pvt_slots_b2":
+            loss = sum(structure_loss(logits, target) for logits in predictions)
+        else:
+            loss = abc_loss(predictions, target, cfg.get("aux_weight", .5))
         if not torch.isfinite(loss):
             raise RuntimeError("Nonfinite probe loss")
         loss.backward()

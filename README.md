@@ -1,3 +1,5 @@
+> **新增原拓扑接口版本**：保留原CFM和44网格双头，提供A/B/C单项替换。见[结构与运行顺序](docs/POLYP_PVT_SLOTS.md)。优先验证单项，尚无训练成绩。
+
 > **A/B去外层残差变体**：使用`configs/abc_pvt_no_residual.yaml`，训练/预测均须配套该配置；原full配置保留旧行为。见[说明](docs/ABC_PVT.md)。
 
 > **最新A/B/C候选已实现**：STPNet-inspired A、局部卷积前置Mamba B、SSFM-inspired通道—空间选择C。见[ABC运行说明与Mamba后端检查](docs/ABC_PVT.md)。先运行448尺寸探针；尚无完整训练成绩。

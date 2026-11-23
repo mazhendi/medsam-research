@@ -335,3 +335,32 @@ def test_prediction_rejects_parameterless_residual_config_mismatch(tmp_path):
     torch.save(dict(architecture="abc_pvt_b2", model={}, epoch=99), checkpoint)
     with pytest.raises(ValueError, match="a_residual"):
         workflow.predict_pvt(path, checkpoint, "unused.csv", tmp_path / "new_predictions")
+
+
+def test_original_topology_variant_keeps_two_head_train_and_inference(tmp_path, monkeypatch):
+    path,cfg=write_config(tmp_path)
+    cfg.update(architecture="polyp_pvt_slots_b2",slots={"a":True})
+    path.write_text(yaml.safe_dump(cfg))
+    write_data(tmp_path)
+    (tmp_path/"encoder.pth").write_bytes(b"probe")
+    model=TinyTwoHead()
+    monkeypatch.setattr(workflow,"build_configured_model",lambda *args:model)
+    probe=workflow.probe_abc(path,steps=1,batch_size=2,image_size=64)
+    assert probe["architecture"] == "polyp_pvt_slots_b2" and probe["no_checkpoint_written"]
+    report=workflow.train_pvt(path)
+    checkpoint=torch.load(report["checkpoint"],weights_only=True)
+    assert checkpoint["provenance"]["prediction"] == "sum_of_two_logits"
+    with torch.no_grad():
+        for head,bias in ((model.first,1.),(model.second,2.)):
+            head.weight.zero_()
+            head.bias.fill_(bias)
+    checkpoint["model"]=model.state_dict()
+    torch.save(checkpoint,report["checkpoint"])
+    output=tmp_path/"prediction"
+    workflow.predict_pvt(path,report["checkpoint"],tmp_path/"train.csv",output)
+    with Image.open(output/"000000.png") as image:
+        assert np.asarray(image).min() == int(torch.sigmoid(torch.tensor(3.)).item()*255)
+    cfg["slots"]["a_residual"]=True
+    path.write_text(yaml.safe_dump(cfg))
+    with pytest.raises(ValueError,match="a_residual"):
+        workflow.predict_pvt(path,report["checkpoint"],tmp_path/"train.csv",tmp_path/"bad")
