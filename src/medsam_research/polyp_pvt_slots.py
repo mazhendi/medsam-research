@@ -13,6 +13,13 @@ from .abc_decoder import ChannelSpatialC, LocalMambaB, SpatialContextA, validate
 def validate_slot_options(options):
     if not isinstance(options, dict):
         raise ValueError("slots must be a mapping")
+    if options.get("a1_variant", "original") not in {"original", "balanced_star"}:
+        raise ValueError("a1_variant must be original or balanced_star")
+    if options.get("a1_variant", "original") != "original":
+        if not options.get("a", False):
+            raise ValueError("balanced_star A1 requires a=True")
+        if options.get("a_residual", False):
+            raise ValueError("balanced_star A1 has no outer residual; set a_residual=False")
     if options.get("b_scan", "raster") not in {"raster", "axial"}:
         raise ValueError("b_scan must be raster or axial")
     if options.get("fusion", "aligned") not in {"aligned", "progressive"}:
@@ -29,7 +36,7 @@ def validate_slot_options(options):
         raise ValueError("a_f2 must be boolean")
     if options.get("a_f2", False) and not options.get("a", False):
         raise ValueError("a_f2 requires a=True")
-    validate_abc_options({key: value for key, value in options.items() if key not in {"cfm", "a_f2", "deep_supervision", "b_scan", "fusion"}})
+    validate_abc_options({key: value for key, value in options.items() if key not in {"cfm", "a_f2", "deep_supervision", "b_scan", "fusion", "a1_variant"}})
     if options.get("width", 32) != 32:
         raise ValueError("Original Polyp-PVT interfaces require width=32")
 
@@ -50,11 +57,11 @@ class AlignedConcatFusion(nn.Module):
 class PolypPVTSlots(nn.Module):
     def __init__(self, baseline, a=False, b=False, c=False, width=32,
                  a_residual=False, b_residual=False, d_state=16, d_conv=4,
-                 expand=2, backend="auto", cfm=True, a_f2=False, deep_supervision=False, b_scan="raster", fusion="aligned"):
+                 expand=2, backend="auto", cfm=True, a_f2=False, deep_supervision=False, b_scan="raster", fusion="aligned", a1_variant="original"):
         super().__init__()
         validate_slot_options(dict(a=a, b=b, c=c, width=width, a_residual=a_residual,
                                    b_residual=b_residual, d_state=d_state, d_conv=d_conv,
-                                   expand=expand, backend=backend, cfm=cfm, a_f2=a_f2, deep_supervision=deep_supervision, b_scan=b_scan, fusion=fusion))
+                                   expand=expand, backend=backend, cfm=cfm, a_f2=a_f2, deep_supervision=deep_supervision, b_scan=b_scan, fusion=fusion, a1_variant=a1_variant))
         self.use_a, self.use_c, self.use_cfm = a, c, cfm
         self.deep_supervision = deep_supervision
         self.backbone = baseline.backbone
@@ -75,7 +82,11 @@ class PolypPVTSlots(nn.Module):
             else:
                 self.aligned_fusion = AlignedConcatFusion(width)
         if a:
-            self.cim = SpatialContextA(64, residual=a_residual)
+            if a1_variant == "balanced_star":
+                from .balanced_star_a import BalancedStarA
+                self.cim = BalancedStarA(64)
+            else:
+                self.cim = SpatialContextA(64, residual=a_residual)
         else:
             self.ca, self.sa = baseline.ca, baseline.sa
         if a_f2:

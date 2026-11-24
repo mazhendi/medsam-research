@@ -1,4 +1,6 @@
-> **当前精简增强**：`configs/polyp_pvt_slots_three_head_geom.yaml`，只用随机裁剪、90°倍数旋转、水平翻转；无颜色扰动和显式垂直翻转。旧组合增强保留。见[参数与运行说明](docs/POLYP_PVT_GEOMETRY.md)。
+> **新增A₁实验（三头、无随机增强）**：`configs/polyp_pvt_slots_three_head_a1_star.yaml`。仅F₁上的A₁替换为均衡双支路＋Star式通道交互；A₂、B、C和辅助权重保持原三头设置，独立输出目录。原三头对照保留。见[结构与运行说明](docs/A1_BALANCED_STAR.md)。
+
+> **历史精简增强对照（本次不使用）**：`configs/polyp_pvt_slots_three_head_geom.yaml`，只用随机裁剪、90°倍数旋转、水平翻转；无颜色扰动和显式垂直翻转。旧组合增强保留。见[参数与运行说明](docs/POLYP_PVT_GEOMETRY.md)。
 
 > **新增352三头增强版**：`configs/polyp_pvt_slots_three_head_aug.yaml`。加入温和几何与外观增强，原结构、训练预算、无增强配置及输出全部保留；另附Polyp-PVT同增强对照。见[增强与运行说明](docs/POLYP_PVT_AUGMENTATION.md)。
 
