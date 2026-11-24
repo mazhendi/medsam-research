@@ -1,3 +1,5 @@
+> 当前继续使用原A₁、原A₂和辅助权重[0.5,0.5]，`augmentation: none`。A★单/双替换及增强均只作历史对照。原三头配置与已训练权重保持兼容。
+
 # 固定352三头主模型：辅助监督对照
 
 主模型回到 `polyp_pvt_slots_three_head.yaml`：A1/A2、原单向raster B3/B4、

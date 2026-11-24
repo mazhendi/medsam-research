@@ -1,12 +1,20 @@
-> **双A替换实验（三头、无随机增强）**：`configs/polyp_pvt_slots_three_head_a12_star.yaml`，F₁/F₂使用独立新版A（64/128通道）。原版及仅替换A₁的配置保留。见[运行说明](docs/A1_BALANCED_STAR.md#双a替换实验)。
+> **当前主模型：原版A＋352三头＋无随机数据增强**。使用 `configs/polyp_pvt_slots_three_head.yaml`；A₁、A₂均为原版 `SpatialContextA`，辅助权重 `[0.5, 0.5]`，原单向B、Cat＋1×1融合及C不变。保留256/352/448多尺度训练。已训练模型可直接配套原三头 `last.pt` 评估，无需因本次入口调整重训。
 
-> **新增A₁实验（三头、无随机增强）**：`configs/polyp_pvt_slots_three_head_a1_star.yaml`。仅F₁上的A₁替换为均衡双支路＋Star式通道交互；A₂、B、C和辅助权重保持原三头设置，独立输出目录。原三头对照保留。见[结构与运行说明](docs/A1_BALANCED_STAR.md)。
+原三头运行入口：
+
+```bash
+medsam train-polyp-pvt --config configs/polyp_pvt_slots_three_head.yaml
+```
+
+已有原三头权重无需重新训练；训练输出目录已存在时程序会拒绝覆盖。A★权重不能用于原版A配置。
+
+> **历史A★双替换对照（非主模型）**：`configs/polyp_pvt_slots_three_head_a12_star.yaml`，F₁/F₂使用独立新版A（64/128通道）。原版及仅替换A₁的配置保留。见[运行说明](docs/A1_BALANCED_STAR.md#双a替换实验)。
+
+> **历史A★单替换对照（非主模型）**：`configs/polyp_pvt_slots_three_head_a1_star.yaml`。仅F₁上的A₁替换为均衡双支路＋Star式通道交互；A₂、B、C和辅助权重保持原三头设置，独立输出目录。原三头对照保留。见[结构与运行说明](docs/A1_BALANCED_STAR.md)。
 
 > **历史精简增强对照（本次不使用）**：`configs/polyp_pvt_slots_three_head_geom.yaml`，只用随机裁剪、90°倍数旋转、水平翻转；无颜色扰动和显式垂直翻转。旧组合增强保留。见[参数与运行说明](docs/POLYP_PVT_GEOMETRY.md)。
 
-> **新增352三头增强版**：`configs/polyp_pvt_slots_three_head_aug.yaml`。加入温和几何与外观增强，原结构、训练预算、无增强配置及输出全部保留；另附Polyp-PVT同增强对照。见[增强与运行说明](docs/POLYP_PVT_AUGMENTATION.md)。
-
-> **当前主模型：原352三头版**，配置 `configs/polyp_pvt_slots_three_head.yaml`。原单向B、Cat＋1×1融合、C与最终头不变。新增弱辅助监督和无辅助监督两组独立配置，见[运行说明](docs/THREE_HEAD_AUX_ABLATION.md)。
+> **历史352三头增强对照（非主模型）**：`configs/polyp_pvt_slots_three_head_aug.yaml`。加入温和几何与外观增强，原结构、训练预算、无增强配置及输出全部保留；另附Polyp-PVT同增强对照。见[增强与运行说明](docs/POLYP_PVT_AUGMENTATION.md)。
 
 > **三头结构说明**：`configs/polyp_pvt_slots_three_head.yaml`。F1/F2各用独立A；B3/B4各接仅训练用辅助头；推理仅使用C后最终头。旧双头配置保留。运行与监督说明见[文档](docs/POLYP_PVT_SLOTS.md#当前三头设计两个辅助头--一个最终头)。
 
