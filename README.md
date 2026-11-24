@@ -1,3 +1,5 @@
+> **新增352三头增强版**：`configs/polyp_pvt_slots_three_head_aug.yaml`。加入温和几何与外观增强，原结构、训练预算、无增强配置及输出全部保留；另附Polyp-PVT同增强对照。见[增强与运行说明](docs/POLYP_PVT_AUGMENTATION.md)。
+
 > **当前主模型：原352三头版**，配置 `configs/polyp_pvt_slots_three_head.yaml`。原单向B、Cat＋1×1融合、C与最终头不变。新增弱辅助监督和无辅助监督两组独立配置，见[运行说明](docs/THREE_HEAD_AUX_ABLATION.md)。
 
 > **三头结构说明**：`configs/polyp_pvt_slots_three_head.yaml`。F1/F2各用独立A；B3/B4各接仅训练用辅助头；推理仅使用C后最终头。旧双头配置保留。运行与监督说明见[文档](docs/POLYP_PVT_SLOTS.md#当前三头设计两个辅助头--一个最终头)。

@@ -15,6 +15,7 @@ from torch.utils.data import DataLoader, Dataset
 
 from .data import file_hash, load_pair, read_manifest
 from .polyp_pvt import SOURCE_HASHES, UPSTREAM_COMMIT, build_polyp_pvt
+from .polyp_pvt_augmentation import augment_pair, augmentation_policy
 from .sam2_unet_workflow import scaled_size, seed_worker, structure_loss
 
 
@@ -25,9 +26,10 @@ def image_tensor(image):
 
 
 class PolypPVTDataset(Dataset):
-    """Released default: bilinear RGB/mask resize, no random augmentation."""
-    def __init__(self, records, size=352):
-        self.records, self.size = records, size
+    """Legacy resize or opt-in paired geometry and RGB-only mild appearance."""
+    def __init__(self, records, size=352, augmentation="none"):
+        augmentation_policy(augmentation)
+        self.records, self.size, self.augmentation = records, size, augmentation
 
     def __len__(self):
         return len(self.records)
@@ -37,6 +39,7 @@ class PolypPVTDataset(Dataset):
         size = (self.size, self.size)
         image = image.resize(size, Image.Resampling.BILINEAR)
         mask = Image.fromarray(mask * 255).resize(size, Image.Resampling.BILINEAR)
+        image, mask = augment_pair(image, mask, self.augmentation)
         target = torch.from_numpy(np.asarray(mask, dtype=np.float32).copy() / 255)[None]
         return image_tensor(image), target
 
@@ -107,8 +110,7 @@ def load_pvt_config(path):
         cfg[key] = str((path.parent / cfg[key]).resolve())
     if cfg.get("image_size") not in {352, 512} or isinstance(cfg.get("image_size"), bool):
         raise ValueError("Training image_size must be 352 or 512")
-    if cfg.get("augmentation") != "none":
-        raise ValueError("Baseline requires augmentation=none")
+    augmentation_policy(cfg.get("augmentation"))
     for key in ("epochs", "batch_size", "expected_train_count"):
         if not isinstance(cfg.get(key), int) or cfg[key] < 1:
             raise ValueError(f"{key} must be a positive integer")
@@ -170,7 +172,8 @@ def train_pvt(config_path):
     model = build_configured_model(cfg, cfg["encoder_checkpoint"]).to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=cfg["learning_rate"],
                                   weight_decay=cfg["weight_decay"])
-    loader = DataLoader(PolypPVTDataset(records, size=cfg["image_size"]),
+    loader = DataLoader(PolypPVTDataset(records, size=cfg["image_size"],
+                                             augmentation=cfg["augmentation"]),
                         batch_size=cfg["batch_size"],
                         shuffle=True, num_workers=cfg.get("workers", 4),
                         pin_memory=device.type == "cuda", drop_last=True,
@@ -178,6 +181,7 @@ def train_pvt(config_path):
     if not len(loader):
         raise ValueError("Training pool is smaller than batch_size")
     provenance = dict(config=cfg, upstream_commit=UPSTREAM_COMMIT, source_hashes=SOURCE_HASHES,
+                      augmentation_policy=augmentation_policy(cfg["augmentation"]),
                       selection="fixed_final_epoch_no_test_access", precision="fp32",
                       train_count=len(records), drop_last=True, learning_rate_schedule="constant",
                       manifest_sha256=file_hash(cfg["train_manifest"]),
