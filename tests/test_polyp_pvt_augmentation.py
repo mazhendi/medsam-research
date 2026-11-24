@@ -92,12 +92,13 @@ def test_augmented_configs_change_only_augmentation_and_output():
         assert new['output'] == old['output']+'_aug'
 
 
-def test_augmented_training_records_policy_and_preserves_update_budget(tmp_path,monkeypatch):
+@pytest.mark.parametrize("mode", ["polyp_light", "polyp_geometry"])
+def test_augmented_training_records_policy_and_preserves_update_budget(tmp_path,monkeypatch,mode):
     import yaml
     from test_polyp_pvt import write_config,write_data,TinyTwoHead
     from medsam_research import polyp_pvt_workflow as workflow
     path,cfg=write_config(tmp_path)
-    cfg['augmentation']='polyp_light'
+    cfg['augmentation']=mode
     path.write_text(yaml.safe_dump(cfg))
     write_data(tmp_path)
     (tmp_path/'encoder.pth').write_bytes(b'probe')
@@ -105,7 +106,55 @@ def test_augmented_training_records_policy_and_preserves_update_budget(tmp_path,
     report=workflow.train_pvt(path)
     saved=torch.load(report['checkpoint'],weights_only=True)
     assert report['steps'] == 3
-    assert saved['provenance']['augmentation_policy'] == augmentation_policy('polyp_light')
+    assert saved['provenance']['augmentation_policy'] == augmentation_policy(mode)
     assert saved['provenance']['training_sizes'] == [256,352,448]
     with pytest.raises(FileExistsError):
         workflow.train_pvt(path)
+
+
+class GeometryDecisions(Decisions):
+    def uniform(self, low, high):
+        return low
+    def randint(self, low, high):
+        return high
+
+
+def test_geometry_only_crop_preserves_pair_and_resizes_to_input_size():
+    mask = np.arange(400, dtype=np.uint16).reshape(20,20).astype(np.uint8)
+    image = Image.fromarray(np.repeat(mask[...,None],3,axis=2))
+    target = Image.fromarray(mask)
+    a,b = augment_pair(image,target,'polyp_geometry',GeometryDecisions([0,1,1]))
+    expected = target.crop((2,2,20,20)).resize((20,20),Image.Resampling.BILINEAR)
+    assert a.size == b.size == (20,20)
+    np.testing.assert_array_equal(b,expected)
+    np.testing.assert_array_equal(np.asarray(a)[...,0],b)
+
+
+@pytest.mark.parametrize('decisions,transform', [([1,0,1],lambda a:np.rot90(a)),
+                                                ([1,1,0],lambda a:np.fliplr(a))])
+def test_geometry_only_has_exact_rotation_and_horizontal_flip(decisions,transform):
+    image,mask=pair()
+    a,b=augment_pair(image,mask,'polyp_geometry',GeometryDecisions(decisions))
+    np.testing.assert_array_equal(np.asarray(b),transform(np.asarray(mask)))
+    np.testing.assert_array_equal(np.asarray(a)[...,0],b)
+
+
+def test_geometry_only_never_changes_uniform_color_and_is_reproducible():
+    image=Image.fromarray(np.full((32,32,3),[80,130,180],dtype=np.uint8))
+    mask=Image.fromarray(np.zeros((32,32),dtype=np.uint8))
+    for seed in range(20):
+        a,b=augment_pair(image,mask,'polyp_geometry',random.Random(seed))
+        c,d=augment_pair(image,mask,'polyp_geometry',random.Random(seed))
+        np.testing.assert_array_equal(a,image)
+        np.testing.assert_array_equal(a,c)
+        np.testing.assert_array_equal(b,d)
+
+
+def test_geometry_configs_only_change_augmentation_and_output():
+    root=Path(__file__).resolve().parents[1]/'configs'
+    for name in ['polyp_pvt_1450','polyp_pvt_slots_three_head','polyp_pvt_slots_three_head_no_aux']:
+        old=load_pvt_config(root/f'{name}.yaml')
+        new=load_pvt_config(root/f'{name}_geom.yaml')
+        assert {key for key in old if old[key]!=new[key]} == {'augmentation','output'}
+        assert new['augmentation'] == 'polyp_geometry'
+        assert new['output'] == old['output']+'_geom'
