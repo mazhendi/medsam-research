@@ -91,3 +91,40 @@ def test_original_default_retains_exact_checkpoint_and_outputs():
     image = torch.randn(1, 3, 64, 64)
     with torch.no_grad():
         torch.testing.assert_close(model(image)["final"], explicit(image)["final"], rtol=0, atol=0)
+
+
+def test_both_a_blocks_replaced_with_independent_weights_and_gradients():
+    model = PolypPVTSlots(FakeBaseline(), a=True, a_f2=True, b=True, c=True,
+                         cfm=False, deep_supervision=True, a1_variant="balanced_star",
+                         a2_variant="balanced_star", d_state=2, expand=1, backend="torch")
+    assert isinstance(model.cim, BalancedStarA) and isinstance(model.a2, BalancedStarA)
+    assert model.cim.project.in_channels == 64
+    assert model.a2.project.in_channels == 128
+    outputs = model(torch.randn(2, 3, 64, 64))
+    assert set(outputs) == {"final", "aux3", "aux4"}
+    slots_loss(outputs, torch.rand(2, 1, 64, 64)).backward()
+    for name, p in model.named_parameters():
+        assert p.grad is not None and torch.isfinite(p.grad).all(), name
+    model.eval()
+    with torch.no_grad():
+        assert set(model(torch.randn(1, 3, 64, 64))) == {"final"}
+
+
+def test_dual_a_config_only_changes_a2_and_output_from_a1_experiment():
+    root = Path(__file__).resolve().parents[1]
+    old = load_pvt_config(root / "configs/polyp_pvt_slots_three_head_a1_star.yaml")
+    new = load_pvt_config(root / "configs/polyp_pvt_slots_three_head_a12_star.yaml")
+    assert {k for k in new if new[k] != old[k]} == {"slots", "output"}
+    assert {k for k in new["slots"] if new["slots"][k] != old["slots"].get(k)} == {"a2_variant"}
+    assert new["slots"]["a2_variant"] == "balanced_star"
+    assert new["augmentation"] == "none" and new["aux_weights"] == [.5, .5]
+
+
+@pytest.mark.parametrize("options", [
+    {"a": True, "a_f2": True, "a2_variant": "invalid"},
+    {"a": True, "a_f2": False, "a2_variant": "balanced_star"},
+    {"a": True, "a_f2": True, "a_residual": True, "a2_variant": "balanced_star"},
+])
+def test_invalid_a2_options_rejected(options):
+    with pytest.raises(ValueError):
+        validate_slot_options(options)

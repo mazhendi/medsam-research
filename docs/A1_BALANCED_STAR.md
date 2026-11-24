@@ -32,3 +32,16 @@ medsam sweep-polyp-pvt --config configs/polyp_pvt_slots_three_head_a1_star.yaml 
 ```
 
 评估与原三头使用同一数据划分、概率图口径和固定检查点规则。实现检查不代表已完成GPU训练；待实测逐集Dice、HD95及小目标分桶，不能预先保证增益。
+
+## 双A替换实验
+
+按后续要求新增 `configs/polyp_pvt_slots_three_head_a12_star.yaml`：A₁、A₂均替换为BalancedStarA，分别处理64和128通道，权重独立。A₂在352输入时保持128×44×44输出。B、C、两个辅助头、辅助权重[0.5,0.5]及原三尺度训练均不变；`augmentation: none`。
+
+原版三头和仅替换A₁的配置不修改。新输出目录为 `runs/polyp_pvt_slots_three_head_a12_star`，需要从PVTv2-B2预训练重新训练，不能直接加载前两种结构的完整检查点。
+
+```bash
+git pull --ff-only
+medsam probe-abc-pvt --config configs/polyp_pvt_slots_three_head_a12_star.yaml --batch-size 2 --image-size 352
+medsam train-polyp-pvt --config configs/polyp_pvt_slots_three_head_a12_star.yaml
+medsam sweep-polyp-pvt --config configs/polyp_pvt_slots_three_head_a12_star.yaml --checkpoint runs/polyp_pvt_slots_three_head_a12_star/last.pt --manifest-dir data/polyp_test --output outputs/polyp_pvt_slots_three_head_a12_star_raw --sizes 352 --normalization raw
+```
