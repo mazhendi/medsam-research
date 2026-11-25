@@ -1,6 +1,8 @@
 > **当前主模型：原版A＋352三头＋无随机数据增强**。使用 `configs/polyp_pvt_slots_three_head.yaml`；A₁、A₂均为原版 `SpatialContextA`，辅助权重 `[0.5, 0.5]`，原单向B、Cat＋1×1融合及C不变。保留256/352/448多尺度训练。已训练模型可直接配套原三头 `last.pt` 评估，无需因本次入口调整重训。
 
-> **B1替换实验（三头、无随机增强）**：`configs/polyp_pvt_slots_three_head_b1.yaml`。B₃/B₄均替换为DW3/5/7＋跨尺度交互＋三路Mamba，无组间残差相加和外层残差；原A/C与监督保持。原Full继续保留。见[结构与训练说明](docs/CROSS_SCALE_B1.md)。
+> **新增共享Mamba B实验**：`configs/polyp_pvt_slots_three_head_shared_b.yaml`。DW3/5/7各32通道，沿batch堆叠共享一个Mamba，状态独立，96→32融合后加外层残差。B₃/B₄均替换，原A/C、三头、无随机增强保持。见[结构与运行说明](docs/SHARED_MAMBA_B.md)。原Full仍保留为主对照。
+
+> **历史B1对照（用户实测下降，不作为主模型）**：`configs/polyp_pvt_slots_three_head_b1.yaml`。B₃/B₄均替换为DW3/5/7＋跨尺度交互＋三路Mamba，无组间残差相加和外层残差；原A/C与监督保持。原Full继续保留。见[结构与训练说明](docs/CROSS_SCALE_B1.md)。
 
 > **候选C替换实验**：`configs/polyp_pvt_slots_three_head_local_c.yaml`，原A/B＋双向3×3局部交叉注意力＋原通道—空间选择结构；三头、无随机增强，独立输出。见[真实算子与运行说明](docs/LOCAL_INTERACTION_C.md)。尚未验证精度，原Full不变。
 
