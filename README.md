@@ -1,5 +1,7 @@
 > **当前主模型：原版A＋352三头＋无随机数据增强**。使用 `configs/polyp_pvt_slots_three_head.yaml`；A₁、A₂均为原版 `SpatialContextA`，辅助权重 `[0.5, 0.5]`，原单向B、Cat＋1×1融合及C不变。保留256/352/448多尺度训练。已训练模型可直接配套原三头 `last.pt` 评估，无需因本次入口调整重训。
 
+> **新增纯删除消融**：三头 `w/o A`、`w/o B`、`w/o C`，不恢复Polyp-PVT被替换组件，完整模型不变。三组无随机增强、辅助权重[0.5,0.5]，独立训练目录。见[配置、运行与评估说明](docs/THREE_HEAD_WO_ABLATION.md)。
+
 原三头运行入口：
 
 ```bash

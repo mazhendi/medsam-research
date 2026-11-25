@@ -13,6 +13,12 @@ from .abc_decoder import ChannelSpatialC, LocalMambaB, SpatialContextA, validate
 def validate_slot_options(options):
     if not isinstance(options, dict):
         raise ValueError("slots must be a mapping")
+    ablation = options.get("ablation", "none")
+    if ablation not in {"none", "wo_a", "wo_b", "wo_c"}:
+        raise ValueError("ablation must be none, wo_a, wo_b or wo_c")
+    if ablation != "none":
+        if not all(options.get(k, False) for k in ("a", "a_f2", "b", "c", "deep_supervision")) or options.get("cfm", True):
+            raise ValueError("w/o ablations require full A/B/C, a_f2, three heads and cfm=False")
     if options.get("a1_variant", "original") not in {"original", "balanced_star"}:
         raise ValueError("a1_variant must be original or balanced_star")
     if options.get("a1_variant", "original") != "original":
@@ -43,7 +49,7 @@ def validate_slot_options(options):
         raise ValueError("a_f2 must be boolean")
     if options.get("a_f2", False) and not options.get("a", False):
         raise ValueError("a_f2 requires a=True")
-    validate_abc_options({key: value for key, value in options.items() if key not in {"cfm", "a_f2", "deep_supervision", "b_scan", "fusion", "a1_variant", "a2_variant"}})
+    validate_abc_options({key: value for key, value in options.items() if key not in {"cfm", "a_f2", "deep_supervision", "b_scan", "fusion", "a1_variant", "a2_variant", "ablation"}})
     if options.get("width", 32) != 32:
         raise ValueError("Original Polyp-PVT interfaces require width=32")
 
@@ -61,14 +67,30 @@ class AlignedConcatFusion(nn.Module):
         return self.projection(torch.cat((deep, middle, fine), 1))
 
 
+class PlainConcatC(nn.Module):
+    """w/o C interface adapter: no attention, normalization or spatial mixing."""
+    def __init__(self, width=32):
+        super().__init__()
+        self.projection = nn.Conv2d(2 * width, width, 1)
+
+    def forward(self, fine, deep):
+        deep = F.interpolate(deep, size=fine.shape[-2:], mode="bilinear", align_corners=True)
+        return self.projection(torch.cat((fine, deep), dim=1))
+
+
 class PolypPVTSlots(nn.Module):
     def __init__(self, baseline, a=False, b=False, c=False, width=32,
                  a_residual=False, b_residual=False, d_state=16, d_conv=4,
-                 expand=2, backend="auto", cfm=True, a_f2=False, deep_supervision=False, b_scan="raster", fusion="aligned", a1_variant="original", a2_variant="original"):
+                 expand=2, backend="auto", cfm=True, a_f2=False, deep_supervision=False, b_scan="raster", fusion="aligned", a1_variant="original", a2_variant="original", ablation="none"):
         super().__init__()
         validate_slot_options(dict(a=a, b=b, c=c, width=width, a_residual=a_residual,
                                    b_residual=b_residual, d_state=d_state, d_conv=d_conv,
-                                   expand=expand, backend=backend, cfm=cfm, a_f2=a_f2, deep_supervision=deep_supervision, b_scan=b_scan, fusion=fusion, a1_variant=a1_variant, a2_variant=a2_variant))
+                                   expand=expand, backend=backend, cfm=cfm, a_f2=a_f2, deep_supervision=deep_supervision, b_scan=b_scan, fusion=fusion, a1_variant=a1_variant, a2_variant=a2_variant, ablation=ablation))
+        self.ablation = ablation
+        if ablation == "wo_a":
+            a, a_f2 = False, False
+        elif ablation == "wo_b":
+            b = False
         self.use_a, self.use_c, self.use_cfm = a, c, cfm
         self.deep_supervision = deep_supervision
         self.backbone = baseline.backbone
@@ -94,7 +116,7 @@ class PolypPVTSlots(nn.Module):
                 self.cim = BalancedStarA(64)
             else:
                 self.cim = SpatialContextA(64, residual=a_residual)
-        else:
+        elif ablation != "wo_a":
             self.ca, self.sa = baseline.ca, baseline.sa
         if a_f2:
             if a2_variant == "balanced_star":
@@ -109,12 +131,14 @@ class PolypPVTSlots(nn.Module):
             self.b4 = block(32, d_state, d_conv, expand, backend, residual=b_residual)
         else:
             self.b3, self.b4 = nn.Identity(), nn.Identity()
-        self.SAM = ChannelSpatialC(32) if c else baseline.SAM
+        self.SAM = PlainConcatC(32) if ablation == "wo_c" else (ChannelSpatialC(32) if c else baseline.SAM)
 
     def forward(self, image):
         f1, f2, f3, f4 = self.backbone(image)
         if self.use_a:
             fine = self.cim(f1)
+        elif self.ablation == "wo_a":
+            fine = f1
         else:
             fine = self.ca(f1)*f1
             fine = self.sa(fine)*fine

@@ -277,7 +277,7 @@ def predict_pvt(config_path, checkpoint, manifest, output, normalization="raw",
         saved = state.get("provenance", {}).get("config", {}).get("slots", {})
         for key, default in (("a", False), ("a_f2", False), ("deep_supervision", False), ("b", False), ("c", False),
                              ("a_residual", False), ("b_residual", False), ("cfm", True),
-                             ("b_scan", "raster"), ("fusion", "aligned"), ("a1_variant", "original"), ("a2_variant", "original")):
+                             ("b_scan", "raster"), ("fusion", "aligned"), ("a1_variant", "original"), ("a2_variant", "original"), ("ablation", "none")):
             if cfg.get("slots", {}).get(key, default) != saved.get(key, default):
                 raise ValueError(f"Checkpoint/config mismatch: slots.{key}; use training config")
     model = build_configured_model(cfg)
