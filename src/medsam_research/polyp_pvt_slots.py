@@ -13,8 +13,8 @@ from .abc_decoder import ChannelSpatialC, LocalMambaB, SpatialContextA, validate
 def validate_slot_options(options):
     if not isinstance(options, dict):
         raise ValueError("slots must be a mapping")
-    if options.get("b_variant", "original") not in {"original", "cross_scale_b1", "shared_mamba"}:
-        raise ValueError("b_variant must be original, cross_scale_b1 or shared_mamba")
+    if options.get("b_variant", "original") not in {"original", "cross_scale_b1", "shared_mamba", "dual_axis"}:
+        raise ValueError("b_variant must be original, cross_scale_b1, shared_mamba or dual_axis")
     if options.get("b_variant", "original") == "cross_scale_b1":
         if not options.get("b", False) or options.get("ablation", "none") == "wo_b":
             raise ValueError("B1 requires B enabled (not wo_b)")
@@ -25,6 +25,11 @@ def validate_slot_options(options):
             raise ValueError("shared_mamba requires B enabled (not wo_b)")
         if options.get("b_scan", "raster") != "raster":
             raise ValueError("shared_mamba uses raster scans, not axial")
+    if options.get("b_variant", "original") == "dual_axis":
+        if not options.get("b", False) or options.get("ablation", "none") == "wo_b":
+            raise ValueError("dual_axis requires B enabled (not wo_b)")
+        if options.get("b_scan", "raster") != "raster":
+            raise ValueError("dual_axis uses its own scan; do not set legacy b_scan=axial")
     if options.get("c_variant", "original") not in {"original", "bidirectional_local"}:
         raise ValueError("c_variant must be original or bidirectional_local")
     if options.get("c_variant", "original") != "original":
@@ -141,7 +146,11 @@ class PolypPVTSlots(nn.Module):
                 self.a2 = BalancedStarA(128)
             else:
                 self.a2 = SpatialContextA(128, residual=a_residual)
-        if b and b_variant == "shared_mamba":
+        if b and b_variant == "dual_axis":
+            from .dual_axis_b import DualAxisMambaB
+            self.b3 = DualAxisMambaB(32, d_state, d_conv, expand, backend, residual=b_residual)
+            self.b4 = DualAxisMambaB(32, d_state, d_conv, expand, backend, residual=b_residual)
+        elif b and b_variant == "shared_mamba":
             from .shared_mamba_b import SharedMambaB
             self.b3 = SharedMambaB(32, d_state, d_conv, expand, backend, residual=b_residual)
             self.b4 = SharedMambaB(32, d_state, d_conv, expand, backend, residual=b_residual)
