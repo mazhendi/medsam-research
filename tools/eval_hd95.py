@@ -45,6 +45,7 @@ def main():
     parser.add_argument("--prefix", default="polyp_prob_")
     parser.add_argument("--test-root", default="data/polyp_test")
     parser.add_argument("--threshold", type=float, default=0.5)
+    parser.add_argument("--manifest-suffix", default="_dedup.csv")
     parser.add_argument("--output", default="reports/polyp_full_2026-11-18/hd95")
     args = parser.parse_args()
 
@@ -55,7 +56,7 @@ def main():
         pred_dir = Path(args.prob_root) / f"{args.prefix}{name}"
         rows = list(csv.DictReader(open(pred_dir / "predictions.csv", encoding="utf-8")))
         gt_map = {r["id"]: r["mask"] for r in
-                  csv.DictReader(open(Path(args.test_root) / f"{name}_dedup.csv", encoding="utf-8"))}
+                  csv.DictReader(open(Path(args.test_root) / f"{name}{args.manifest_suffix}", encoding="utf-8"))}
         values, per_image = [], []
         for row in rows:
             prob = load_prob(pred_dir / row["prediction"])
