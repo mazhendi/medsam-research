@@ -13,6 +13,11 @@ from .abc_decoder import ChannelSpatialC, LocalMambaB, SpatialContextA, validate
 def validate_slot_options(options):
     if not isinstance(options, dict):
         raise ValueError("slots must be a mapping")
+    if options.get("c_variant", "original") not in {"original", "bidirectional_local"}:
+        raise ValueError("c_variant must be original or bidirectional_local")
+    if options.get("c_variant", "original") != "original":
+        if not options.get("c", False) or options.get("ablation", "none") == "wo_c":
+            raise ValueError("bidirectional_local requires C enabled (not wo_c)")
     ablation = options.get("ablation", "none")
     if ablation not in {"none", "wo_a", "wo_b", "wo_c"}:
         raise ValueError("ablation must be none, wo_a, wo_b or wo_c")
@@ -49,7 +54,7 @@ def validate_slot_options(options):
         raise ValueError("a_f2 must be boolean")
     if options.get("a_f2", False) and not options.get("a", False):
         raise ValueError("a_f2 requires a=True")
-    validate_abc_options({key: value for key, value in options.items() if key not in {"cfm", "a_f2", "deep_supervision", "b_scan", "fusion", "a1_variant", "a2_variant", "ablation"}})
+    validate_abc_options({key: value for key, value in options.items() if key not in {"cfm", "a_f2", "deep_supervision", "b_scan", "fusion", "a1_variant", "a2_variant", "ablation", "c_variant"}})
     if options.get("width", 32) != 32:
         raise ValueError("Original Polyp-PVT interfaces require width=32")
 
@@ -81,11 +86,11 @@ class PlainConcatC(nn.Module):
 class PolypPVTSlots(nn.Module):
     def __init__(self, baseline, a=False, b=False, c=False, width=32,
                  a_residual=False, b_residual=False, d_state=16, d_conv=4,
-                 expand=2, backend="auto", cfm=True, a_f2=False, deep_supervision=False, b_scan="raster", fusion="aligned", a1_variant="original", a2_variant="original", ablation="none"):
+                 expand=2, backend="auto", cfm=True, a_f2=False, deep_supervision=False, b_scan="raster", fusion="aligned", a1_variant="original", a2_variant="original", ablation="none", c_variant="original"):
         super().__init__()
         validate_slot_options(dict(a=a, b=b, c=c, width=width, a_residual=a_residual,
                                    b_residual=b_residual, d_state=d_state, d_conv=d_conv,
-                                   expand=expand, backend=backend, cfm=cfm, a_f2=a_f2, deep_supervision=deep_supervision, b_scan=b_scan, fusion=fusion, a1_variant=a1_variant, a2_variant=a2_variant, ablation=ablation))
+                                   expand=expand, backend=backend, cfm=cfm, a_f2=a_f2, deep_supervision=deep_supervision, b_scan=b_scan, fusion=fusion, a1_variant=a1_variant, a2_variant=a2_variant, ablation=ablation, c_variant=c_variant))
         self.ablation = ablation
         if ablation == "wo_a":
             a, a_f2 = False, False
@@ -131,7 +136,13 @@ class PolypPVTSlots(nn.Module):
             self.b4 = block(32, d_state, d_conv, expand, backend, residual=b_residual)
         else:
             self.b3, self.b4 = nn.Identity(), nn.Identity()
-        self.SAM = PlainConcatC(32) if ablation == "wo_c" else (ChannelSpatialC(32) if c else baseline.SAM)
+        if ablation == "wo_c":
+            self.SAM = PlainConcatC(32)
+        elif c and c_variant == "bidirectional_local":
+            from .local_interaction_c import BidirectionalLocalC
+            self.SAM = BidirectionalLocalC(32)
+        else:
+            self.SAM = ChannelSpatialC(32) if c else baseline.SAM
 
     def forward(self, image):
         f1, f2, f3, f4 = self.backbone(image)

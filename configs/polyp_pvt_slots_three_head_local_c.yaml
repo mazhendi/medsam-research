@@ -1,0 +1,44 @@
+# Candidate experiment: only C replaced, original A/B, no random augmentation.
+# Main model: original SpatialContextA at BOTH F1 and F2; no random augmentation.
+# a1_variant/a2_variant omitted intentionally: both default to original.
+# A/B/C enabled, original CFM removed; minimal alignment+concatenation+1x1 only.
+architecture: polyp_pvt_slots_b2
+upstream: ../vendor/Polyp-PVT
+encoder_checkpoint: ../checkpoints/pvt_v2_b2.pth
+train_manifest: ../data/polyp_full/train_all.csv
+output: ../runs/polyp_pvt_slots_three_head_local_c
+expected_train_count: 1450
+image_size: 352
+# Upstream --epoch=100 executes range(1,100), i.e. 99 complete epochs.
+epochs: 99
+batch_size: 16
+learning_rate: 0.0001
+weight_decay: 0.0001
+gradient_clip: 0.5
+# Upstream default augmentation=False; three-scale updates remain enabled.
+augmentation: none
+scales: [0.75, 1.0, 1.25]
+workers: 4
+seed: 42
+device: cuda
+
+# Three heads: C final (44 grid), B3 auxiliary (22), B4 auxiliary (11).
+# Auxiliary heads execute only during training. No original CFM.
+slots:
+  cfm: false
+  deep_supervision: true
+  width: 32
+  a: true
+  a_f2: true
+  b: true
+  c: true
+  c_variant: bidirectional_local
+  a_residual: false
+  b_residual: false
+  d_state: 16
+  d_conv: 4
+  expand: 2
+  backend: auto
+
+# Auxiliary head 1 (B3), auxiliary head 2 (B4); main weight = 1.
+aux_weights: [0.5, 0.5]
