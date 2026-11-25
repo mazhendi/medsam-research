@@ -13,6 +13,13 @@ from .abc_decoder import ChannelSpatialC, LocalMambaB, SpatialContextA, validate
 def validate_slot_options(options):
     if not isinstance(options, dict):
         raise ValueError("slots must be a mapping")
+    if options.get("b_variant", "original") not in {"original", "cross_scale_b1"}:
+        raise ValueError("b_variant must be original or cross_scale_b1")
+    if options.get("b_variant", "original") == "cross_scale_b1":
+        if not options.get("b", False) or options.get("ablation", "none") == "wo_b":
+            raise ValueError("B1 requires B enabled (not wo_b)")
+        if options.get("b_residual", False) or options.get("b_scan", "raster") != "raster":
+            raise ValueError("B1 requires b_residual=False and b_scan=raster")
     if options.get("c_variant", "original") not in {"original", "bidirectional_local"}:
         raise ValueError("c_variant must be original or bidirectional_local")
     if options.get("c_variant", "original") != "original":
@@ -54,7 +61,7 @@ def validate_slot_options(options):
         raise ValueError("a_f2 must be boolean")
     if options.get("a_f2", False) and not options.get("a", False):
         raise ValueError("a_f2 requires a=True")
-    validate_abc_options({key: value for key, value in options.items() if key not in {"cfm", "a_f2", "deep_supervision", "b_scan", "fusion", "a1_variant", "a2_variant", "ablation", "c_variant"}})
+    validate_abc_options({key: value for key, value in options.items() if key not in {"cfm", "a_f2", "deep_supervision", "b_scan", "fusion", "a1_variant", "a2_variant", "ablation", "c_variant", "b_variant"}})
     if options.get("width", 32) != 32:
         raise ValueError("Original Polyp-PVT interfaces require width=32")
 
@@ -86,11 +93,11 @@ class PlainConcatC(nn.Module):
 class PolypPVTSlots(nn.Module):
     def __init__(self, baseline, a=False, b=False, c=False, width=32,
                  a_residual=False, b_residual=False, d_state=16, d_conv=4,
-                 expand=2, backend="auto", cfm=True, a_f2=False, deep_supervision=False, b_scan="raster", fusion="aligned", a1_variant="original", a2_variant="original", ablation="none", c_variant="original"):
+                 expand=2, backend="auto", cfm=True, a_f2=False, deep_supervision=False, b_scan="raster", fusion="aligned", a1_variant="original", a2_variant="original", ablation="none", c_variant="original", b_variant="original"):
         super().__init__()
         validate_slot_options(dict(a=a, b=b, c=c, width=width, a_residual=a_residual,
                                    b_residual=b_residual, d_state=d_state, d_conv=d_conv,
-                                   expand=expand, backend=backend, cfm=cfm, a_f2=a_f2, deep_supervision=deep_supervision, b_scan=b_scan, fusion=fusion, a1_variant=a1_variant, a2_variant=a2_variant, ablation=ablation, c_variant=c_variant))
+                                   expand=expand, backend=backend, cfm=cfm, a_f2=a_f2, deep_supervision=deep_supervision, b_scan=b_scan, fusion=fusion, a1_variant=a1_variant, a2_variant=a2_variant, ablation=ablation, c_variant=c_variant, b_variant=b_variant))
         self.ablation = ablation
         if ablation == "wo_a":
             a, a_f2 = False, False
@@ -129,7 +136,11 @@ class PolypPVTSlots(nn.Module):
                 self.a2 = BalancedStarA(128)
             else:
                 self.a2 = SpatialContextA(128, residual=a_residual)
-        if b:
+        if b and b_variant == "cross_scale_b1":
+            from .cross_scale_b1 import CrossScaleMambaB1
+            self.b3 = CrossScaleMambaB1(32, d_state, d_conv, expand, backend)
+            self.b4 = CrossScaleMambaB1(32, d_state, d_conv, expand, backend)
+        elif b:
             from .axial_progressive import AxialLocalMambaB
             block = AxialLocalMambaB if b_scan == "axial" else LocalMambaB
             self.b3 = block(32, d_state, d_conv, expand, backend, residual=b_residual)
