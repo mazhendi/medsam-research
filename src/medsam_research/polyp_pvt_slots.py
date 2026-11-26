@@ -13,8 +13,8 @@ from .abc_decoder import ChannelSpatialC, LocalMambaB, SpatialContextA, validate
 def validate_slot_options(options):
     if not isinstance(options, dict):
         raise ValueError("slots must be a mapping")
-    if options.get("b_variant", "original") not in {"original", "cross_scale_b1", "shared_mamba", "dual_axis", "multiscale_readwrite"}:
-        raise ValueError("b_variant must be original, cross_scale_b1, shared_mamba, dual_axis or multiscale_readwrite")
+    if options.get("b_variant", "original") not in {"original", "cross_scale_b1", "shared_mamba", "dual_axis", "multiscale_readwrite", "dual_statistic"}:
+        raise ValueError("b_variant must be original, cross_scale_b1, shared_mamba, dual_axis, multiscale_readwrite or dual_statistic")
     if options.get("b_variant", "original") == "cross_scale_b1":
         if not options.get("b", False) or options.get("ablation", "none") == "wo_b":
             raise ValueError("B1 requires B enabled (not wo_b)")
@@ -35,6 +35,11 @@ def validate_slot_options(options):
             raise ValueError("multiscale_readwrite requires B enabled (not wo_b)")
         if options.get("b_scan", "raster") != "raster":
             raise ValueError("multiscale_readwrite uses raster scans")
+    if options.get("b_variant", "original") == "dual_statistic":
+        if not options.get("b", False) or options.get("ablation", "none") == "wo_b":
+            raise ValueError("dual_statistic requires B enabled (not wo_b)")
+        if options.get("b_scan", "raster") != "raster":
+            raise ValueError("dual_statistic uses raster scans")
     if options.get("c_variant", "original") not in {"original", "bidirectional_local"}:
         raise ValueError("c_variant must be original or bidirectional_local")
     if options.get("c_variant", "original") != "original":
@@ -151,7 +156,11 @@ class PolypPVTSlots(nn.Module):
                 self.a2 = BalancedStarA(128)
             else:
                 self.a2 = SpatialContextA(128, residual=a_residual)
-        if b and b_variant == "multiscale_readwrite":
+        if b and b_variant == "dual_statistic":
+            from .dual_statistic_b import DualStatisticMambaB
+            self.b3 = DualStatisticMambaB(32, d_state, d_conv, expand, backend, residual=b_residual)
+            self.b4 = DualStatisticMambaB(32, d_state, d_conv, expand, backend, residual=b_residual)
+        elif b and b_variant == "multiscale_readwrite":
             from .multiscale_readwrite_b import MultiscaleReadWriteB
             self.b3 = MultiscaleReadWriteB(32, d_state, d_conv, expand, backend, residual=b_residual)
             self.b4 = MultiscaleReadWriteB(32, d_state, d_conv, expand, backend, residual=b_residual)
