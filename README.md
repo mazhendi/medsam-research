@@ -1,5 +1,7 @@
 > **当前主模型：原版A＋352三头＋无随机数据增强**。使用 `configs/polyp_pvt_slots_three_head.yaml`；A₁、A₂均为原版 `SpatialContextA`，辅助权重 `[0.5, 0.5]`，原单向B、Cat＋1×1融合及C不变。保留256/352/448多尺度训练。已训练模型可直接配套原三头 `last.pt` 评估，无需因本次入口调整重训。
 
+> **多尺度读写条件化B候选**：`configs/polyp_pvt_slots_three_head_readwrite_b.yaml`。DW1/3/5/7提供SSM读写参数B/C，局部内容生成步长Δ；保留外层残差。替换B₃/B₄，原A/C、三头、无随机增强保持。见[参数来源与运行说明](docs/MULTISCALE_READWRITE_B.md)。未GPU验证，原Full继续保留。
+
 > **双轴双向B候选**：`configs/polyp_pvt_slots_three_head_dual_axis_b.yaml`。逐行/逐列独立序列，同轴正反向共享Mamba参数，反向对齐后融合；外层残差开启。原A/C、三头、无随机增强保持，独立输出。见[代码对应与运行说明](docs/DUAL_AXIS_MAMBA_B.md)。尚未GPU验证，原Full不变。
 
 > **新增共享Mamba B实验**：`configs/polyp_pvt_slots_three_head_shared_b.yaml`。DW3/5/7各32通道，沿batch堆叠共享一个Mamba，状态独立，96→32融合后加外层残差。B₃/B₄均替换，原A/C、三头、无随机增强保持。见[结构与运行说明](docs/SHARED_MAMBA_B.md)。原Full仍保留为主对照。
