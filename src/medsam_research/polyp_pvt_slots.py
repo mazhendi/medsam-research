@@ -13,8 +13,8 @@ from .abc_decoder import ChannelSpatialC, LocalMambaB, SpatialContextA, validate
 def validate_slot_options(options):
     if not isinstance(options, dict):
         raise ValueError("slots must be a mapping")
-    if options.get("b_variant", "original") not in {"original", "cross_scale_b1", "shared_mamba", "dual_axis", "multiscale_readwrite", "dual_statistic"}:
-        raise ValueError("b_variant must be original, cross_scale_b1, shared_mamba, dual_axis, multiscale_readwrite or dual_statistic")
+    if options.get("b_variant", "original") not in {"original", "cross_scale_b1", "shared_mamba", "dual_axis", "multiscale_readwrite", "dual_statistic", "progressive_concat"}:
+        raise ValueError("b_variant must be original, cross_scale_b1, shared_mamba, dual_axis, multiscale_readwrite, dual_statistic or progressive_concat")
     if options.get("b_variant", "original") == "cross_scale_b1":
         if not options.get("b", False) or options.get("ablation", "none") == "wo_b":
             raise ValueError("B1 requires B enabled (not wo_b)")
@@ -40,6 +40,11 @@ def validate_slot_options(options):
             raise ValueError("dual_statistic requires B enabled (not wo_b)")
         if options.get("b_scan", "raster") != "raster":
             raise ValueError("dual_statistic uses raster scans")
+    if options.get("b_variant", "original") == "progressive_concat":
+        if not options.get("b", False) or options.get("ablation", "none") == "wo_b":
+            raise ValueError("progressive_concat requires B enabled (not wo_b)")
+        if options.get("b_residual", False) or options.get("b_scan", "raster") != "raster":
+            raise ValueError("progressive_concat requires b_residual=False and b_scan=raster")
     if options.get("c_variant", "original") not in {"original", "bidirectional_local"}:
         raise ValueError("c_variant must be original or bidirectional_local")
     if options.get("c_variant", "original") != "original":
@@ -156,7 +161,11 @@ class PolypPVTSlots(nn.Module):
                 self.a2 = BalancedStarA(128)
             else:
                 self.a2 = SpatialContextA(128, residual=a_residual)
-        if b and b_variant == "dual_statistic":
+        if b and b_variant == "progressive_concat":
+            from .progressive_concat_b import ProgressiveConcatMambaB
+            self.b3 = ProgressiveConcatMambaB(32, d_state, d_conv, expand, backend)
+            self.b4 = ProgressiveConcatMambaB(32, d_state, d_conv, expand, backend)
+        elif b and b_variant == "dual_statistic":
             from .dual_statistic_b import DualStatisticMambaB
             self.b3 = DualStatisticMambaB(32, d_state, d_conv, expand, backend, residual=b_residual)
             self.b4 = DualStatisticMambaB(32, d_state, d_conv, expand, backend, residual=b_residual)
