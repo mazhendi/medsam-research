@@ -72,12 +72,17 @@ def validate_slot_options(options):
             raise ValueError("Set a_residual=False for non-original A2; multiscale_spatial already has two intrinsic residuals")
     if options.get("b_scan", "raster") not in {"raster", "axial"}:
         raise ValueError("b_scan must be raster or axial")
-    if options.get("fusion", "aligned") not in {"aligned", "progressive"}:
-        raise ValueError("fusion must be aligned or progressive")
+    if options.get("fusion", "aligned") not in {"aligned", "progressive", "dual_path"}:
+        raise ValueError("fusion must be aligned, progressive or dual_path")
     if options.get("b_scan", "raster") == "axial" and not options.get("b", False):
         raise ValueError("axial b_scan requires b=True")
     if options.get("fusion", "aligned") == "progressive" and options.get("cfm", True):
         raise ValueError("progressive fusion requires cfm=False")
+    if options.get("fusion", "aligned") == "dual_path":
+        if options.get("cfm", True) or not all(options.get(k, False) for k in ("a", "a_f2", "b", "c", "deep_supervision")):
+            raise ValueError("dual_path requires A1/A2/B/C, three heads, cfm=False")
+        if options.get("ablation", "none") != "none":
+            raise ValueError("dual_path does not support legacy deletion ablations")
     if not isinstance(options.get("cfm", True), bool):
         raise ValueError("cfm must be boolean")
     if not isinstance(options.get("deep_supervision", False), bool):
@@ -123,6 +128,7 @@ class PolypPVTSlots(nn.Module):
         validate_slot_options(dict(a=a, b=b, c=c, width=width, a_residual=a_residual,
                                    b_residual=b_residual, d_state=d_state, d_conv=d_conv,
                                    expand=expand, backend=backend, cfm=cfm, a_f2=a_f2, deep_supervision=deep_supervision, b_scan=b_scan, fusion=fusion, a1_variant=a1_variant, a2_variant=a2_variant, ablation=ablation, c_variant=c_variant, b_variant=b_variant))
+        self.fusion = fusion
         self.ablation = ablation
         if ablation == "wo_a":
             a, a_f2 = False, False
@@ -142,7 +148,10 @@ class PolypPVTSlots(nn.Module):
         if cfm:
             self.CFM = baseline.CFM
         else:
-            if fusion == "progressive":
+            if fusion == "dual_path":
+                self.detail_fusion = nn.Conv2d(2*width, width, 1)
+                self.context_fusion = nn.Conv2d(2*width, width, 1)
+            elif fusion == "progressive":
                 from .axial_progressive import ProgressiveFusion
                 self.aligned_fusion = ProgressiveFusion(width)
             else:
@@ -230,8 +239,18 @@ class PolypPVTSlots(nn.Module):
         p2 = self.Translayer2_1(self.a2(f2) if hasattr(self, "a2") else f2)
         p3 = self.b3(self.Translayer3_1(f3))
         p4 = self.b4(self.Translayer4_1(f4))
-        fused = self.CFM(p4, p3, p2) if self.use_cfm else self.aligned_fusion(p4, p3, p2)
-        guidance = self.down05(self.Translayer2_0(fine))
+        if self.fusion == "dual_path":
+            # Preserve F1 grid; F2 contributes only to the detail path.
+            detail = self.Translayer2_0(fine)
+            p2_up = F.interpolate(p2, size=detail.shape[-2:], mode="bilinear", align_corners=True)
+            guidance = self.detail_fusion(torch.cat((detail, p2_up), dim=1))
+            # Preserve native B3/B4 outputs for independent auxiliary heads.
+            p4_up = F.interpolate(p4, size=p3.shape[-2:], mode="bilinear", align_corners=True)
+            context = self.context_fusion(torch.cat((p3, p4_up), dim=1))
+            fused = F.interpolate(context, size=guidance.shape[-2:], mode="bilinear", align_corners=True)
+        else:
+            fused = self.CFM(p4, p3, p2) if self.use_cfm else self.aligned_fusion(p4, p3, p2)
+            guidance = self.down05(self.Translayer2_0(fine))
         output = self.SAM(guidance, fused) if self.use_c else self.SAM(fused, guidance)
         if self.deep_supervision:
             result = {"final": F.interpolate(self.out_SAM(output), size=image.shape[-2:],

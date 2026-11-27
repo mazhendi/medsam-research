@@ -1,0 +1,41 @@
+# Topology only: F1/F2 detail fusion; F3/F4 context fusion; original C at F1 grid.
+# No gamma1/gamma2: direct residual additions. Scaled variant preserved.
+# Replace A1/A2 only; original B/C, three heads, no random augmentation.
+architecture: polyp_pvt_slots_b2
+upstream: ../vendor/Polyp-PVT
+encoder_checkpoint: ../checkpoints/pvt_v2_b2.pth
+train_manifest: ../data/polyp_full/train_all.csv
+output: ../runs/polyp_pvt_slots_three_head_ms_a_no_scale_dual_path
+expected_train_count: 1450
+image_size: 352
+epochs: 99
+batch_size: 16
+learning_rate: 0.0001
+weight_decay: 0.0001
+gradient_clip: 0.5
+augmentation: none
+scales: [0.75, 1.0, 1.25]
+workers: 4
+seed: 42
+device: cuda
+
+slots:
+  fusion: dual_path
+  cfm: false
+  deep_supervision: true
+  width: 32
+  a: true
+  a_f2: true
+  a1_variant: multiscale_spatial_no_scale
+  a2_variant: multiscale_spatial_no_scale
+  b: true
+  c: true
+  # No extra wrapper skip; new A has two intrinsic direct residuals.
+  a_residual: false
+  b_residual: false
+  d_state: 16
+  d_conv: 4
+  expand: 2
+  backend: auto
+
+aux_weights: [0.5, 0.5]
