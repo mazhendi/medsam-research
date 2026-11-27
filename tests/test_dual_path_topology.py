@@ -67,3 +67,29 @@ def test_real_grids_heads_and_backprop(size):
 def test_invalid_combination(extra):
     opts=dict(config()['slots']);opts.update(extra)
     with pytest.raises(ValueError):validate_slot_options(opts)
+
+
+def test_original_abc_on_current_dual_path():
+    from medsam_research.abc_decoder import SpatialContextA, LocalMambaB, ChannelSpatialC
+    root=Path(__file__).resolve().parents[1]
+    cfg=load_pvt_config(root/'configs/polyp_pvt_slots_three_head_original_abc_dual_path.yaml')
+    baseline=load_pvt_config(root/'configs/polyp_pvt_slots_three_head.yaml')
+    assert {k for k in cfg if cfg[k]!=baseline[k]}=={'slots','output'}
+    assert {k for k in cfg['slots'] if cfg['slots'][k]!=baseline['slots'].get(k)}=={'fusion'}
+    model=PolypPVTSlots(FakeBaseline(),**dict(cfg['slots'],d_state=2,expand=1,backend='torch'))
+    assert type(model.cim) is SpatialContextA and type(model.a2) is SpatialContextA
+    assert type(model.b3) is LocalMambaB and type(model.b4) is LocalMambaB
+    assert type(model.SAM) is ChannelSpatialC
+    assert not model.cim.residual and not model.a2.residual
+    assert not model.b3.residual and not model.b4.residual
+    seen=[]
+    model.SAM.register_forward_pre_hook(lambda _,args:seen.extend(a.shape for a in args))
+    x=torch.randn(2,3,64,64)
+    out=model(x)
+    assert seen==[torch.Size([2,32,16,16])]*2
+    assert set(out)=={'final','aux3','aux4'}
+    slots_loss(out,torch.rand(2,1,64,64),cfg['aux_weights']).backward()
+    for name,p in model.named_parameters():
+        assert p.grad is not None and torch.isfinite(p.grad).all(),name
+    model.eval()
+    with torch.no_grad():assert set(model(x))=={'final'}
