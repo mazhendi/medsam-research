@@ -56,15 +56,15 @@ def validate_slot_options(options):
     if ablation != "none":
         if not all(options.get(k, False) for k in ("a", "a_f2", "b", "c", "deep_supervision")) or options.get("cfm", True):
             raise ValueError("w/o ablations require full A/B/C, a_f2, three heads and cfm=False")
-    if options.get("a1_variant", "original") not in {"original", "balanced_star", "dual_stream_gated", "multiscale_spatial"}:
-        raise ValueError("a1_variant must be original, balanced_star, dual_stream_gated or multiscale_spatial")
+    if options.get("a1_variant", "original") not in {"original", "balanced_star", "dual_stream_gated", "multiscale_spatial", "multiscale_spatial_no_scale"}:
+        raise ValueError("a1_variant must be original, balanced_star, dual_stream_gated, multiscale_spatial or multiscale_spatial_no_scale")
     if options.get("a1_variant", "original") != "original":
         if not options.get("a", False):
             raise ValueError("non-original A1 requires a=True")
         if options.get("a_residual", False):
             raise ValueError("Set a_residual=False for non-original A1; multiscale_spatial already has two intrinsic residuals")
-    if options.get("a2_variant", "original") not in {"original", "balanced_star", "dual_stream_gated", "multiscale_spatial"}:
-        raise ValueError("a2_variant must be original, balanced_star, dual_stream_gated or multiscale_spatial")
+    if options.get("a2_variant", "original") not in {"original", "balanced_star", "dual_stream_gated", "multiscale_spatial", "multiscale_spatial_no_scale"}:
+        raise ValueError("a2_variant must be original, balanced_star, dual_stream_gated, multiscale_spatial or multiscale_spatial_no_scale")
     if options.get("a2_variant", "original") != "original":
         if not options.get("a_f2", False):
             raise ValueError("non-original A2 requires a_f2=True")
@@ -148,7 +148,10 @@ class PolypPVTSlots(nn.Module):
             else:
                 self.aligned_fusion = AlignedConcatFusion(width)
         if a:
-            if a1_variant == "multiscale_spatial":
+            if a1_variant == "multiscale_spatial_no_scale":
+                from .multiscale_spatial_a import MultiscaleSpatialANoScale
+                self.cim = MultiscaleSpatialANoScale(64)
+            elif a1_variant == "multiscale_spatial":
                 from .multiscale_spatial_a import MultiscaleSpatialA
                 self.cim = MultiscaleSpatialA(64)
             elif a1_variant == "dual_stream_gated":
@@ -162,7 +165,10 @@ class PolypPVTSlots(nn.Module):
         elif ablation != "wo_a":
             self.ca, self.sa = baseline.ca, baseline.sa
         if a_f2:
-            if a2_variant == "multiscale_spatial":
+            if a2_variant == "multiscale_spatial_no_scale":
+                from .multiscale_spatial_a import MultiscaleSpatialANoScale
+                self.a2 = MultiscaleSpatialANoScale(128)
+            elif a2_variant == "multiscale_spatial":
                 from .multiscale_spatial_a import MultiscaleSpatialA
                 self.a2 = MultiscaleSpatialA(128)
             elif a2_variant == "dual_stream_gated":

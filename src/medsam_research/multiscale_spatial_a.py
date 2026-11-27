@@ -42,3 +42,21 @@ class MultiscaleSpatialA(nn.Module):
         spatial = self.fuse(torch.cat([branch(p) for branch in self.local], dim=1))
         z = x + self.gamma1*spatial
         return z + self.gamma2*self.mlp(self.norm2(z))
+
+
+class MultiscaleSpatialANoScale(MultiscaleSpatialA):
+    """Same operators as MultiscaleSpatialA, with direct residual additions.
+
+    No gamma parameters or fixed residual scaling. Historical scaled class
+    and its checkpoint keys remain unchanged.
+    """
+    def __init__(self, channels, expansion=2):
+        super().__init__(channels, expansion)
+        del self.gamma1
+        del self.gamma2
+
+    def forward(self, x):
+        p = self.project(self.norm1(x))
+        spatial = self.fuse(torch.cat([branch(p) for branch in self.local], dim=1))
+        z = x + spatial
+        return z + self.mlp(self.norm2(z))
