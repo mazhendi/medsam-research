@@ -56,15 +56,15 @@ def validate_slot_options(options):
     if ablation != "none":
         if not all(options.get(k, False) for k in ("a", "a_f2", "b", "c", "deep_supervision")) or options.get("cfm", True):
             raise ValueError("w/o ablations require full A/B/C, a_f2, three heads and cfm=False")
-    if options.get("a1_variant", "original") not in {"original", "balanced_star", "dual_stream_gated", "multiscale_spatial", "multiscale_spatial_no_scale", "original_mlp", "directional_context"}:
-        raise ValueError("a1_variant must be original, balanced_star, dual_stream_gated, multiscale_spatial, multiscale_spatial_no_scale, original_mlp or directional_context")
+    if options.get("a1_variant", "original") not in {"original", "balanced_star", "dual_stream_gated", "multiscale_spatial", "multiscale_spatial_no_scale", "original_mlp", "directional_context", "multiscale_cross_attention"}:
+        raise ValueError("a1_variant must be original, balanced_star, dual_stream_gated, multiscale_spatial, multiscale_spatial_no_scale, original_mlp, directional_context or multiscale_cross_attention")
     if options.get("a1_variant", "original") != "original":
         if not options.get("a", False):
             raise ValueError("non-original A1 requires a=True")
         if options.get("a_residual", False):
             raise ValueError("Set a_residual=False for non-original A1; multiscale_spatial already has two intrinsic residuals")
-    if options.get("a2_variant", "original") not in {"original", "balanced_star", "dual_stream_gated", "multiscale_spatial", "multiscale_spatial_no_scale", "original_mlp", "directional_context"}:
-        raise ValueError("a2_variant must be original, balanced_star, dual_stream_gated, multiscale_spatial, multiscale_spatial_no_scale, original_mlp or directional_context")
+    if options.get("a2_variant", "original") not in {"original", "balanced_star", "dual_stream_gated", "multiscale_spatial", "multiscale_spatial_no_scale", "original_mlp", "directional_context", "multiscale_cross_attention"}:
+        raise ValueError("a2_variant must be original, balanced_star, dual_stream_gated, multiscale_spatial, multiscale_spatial_no_scale, original_mlp, directional_context or multiscale_cross_attention")
     if options.get("a2_variant", "original") != "original":
         if not options.get("a_f2", False):
             raise ValueError("non-original A2 requires a_f2=True")
@@ -128,6 +128,8 @@ class PolypPVTSlots(nn.Module):
         validate_slot_options(dict(a=a, b=b, c=c, width=width, a_residual=a_residual,
                                    b_residual=b_residual, d_state=d_state, d_conv=d_conv,
                                    expand=expand, backend=backend, cfm=cfm, a_f2=a_f2, deep_supervision=deep_supervision, b_scan=b_scan, fusion=fusion, a1_variant=a1_variant, a2_variant=a2_variant, ablation=ablation, c_variant=c_variant, b_variant=b_variant))
+        self.a1_cross = a1_variant == "multiscale_cross_attention"
+        self.a2_cross = a2_variant == "multiscale_cross_attention"
         self.fusion = fusion
         self.ablation = ablation
         if ablation == "wo_a":
@@ -157,7 +159,10 @@ class PolypPVTSlots(nn.Module):
             else:
                 self.aligned_fusion = AlignedConcatFusion(width)
         if a:
-            if a1_variant == "directional_context":
+            if a1_variant == "multiscale_cross_attention":
+                from .multiscale_cross_attention_a import MultiscaleCrossAttentionA
+                self.cim = MultiscaleCrossAttentionA(64, 128, width=32)
+            elif a1_variant == "directional_context":
                 from .directional_context_a import DirectionalContextA
                 self.cim = DirectionalContextA(64)
             elif a1_variant == "original_mlp":
@@ -180,7 +185,10 @@ class PolypPVTSlots(nn.Module):
         elif ablation != "wo_a":
             self.ca, self.sa = baseline.ca, baseline.sa
         if a_f2:
-            if a2_variant == "directional_context":
+            if a2_variant == "multiscale_cross_attention":
+                from .multiscale_cross_attention_a import MultiscaleCrossAttentionA
+                self.a2 = MultiscaleCrossAttentionA(128, 320, width=64)
+            elif a2_variant == "directional_context":
                 from .directional_context_a import DirectionalContextA
                 self.a2 = DirectionalContextA(128)
             elif a2_variant == "original_mlp":
@@ -242,13 +250,14 @@ class PolypPVTSlots(nn.Module):
     def forward(self, image):
         f1, f2, f3, f4 = self.backbone(image)
         if self.use_a:
-            fine = self.cim(f1)
+            fine = self.cim(f1, f2) if self.a1_cross else self.cim(f1)
         elif self.ablation == "wo_a":
             fine = f1
         else:
             fine = self.ca(f1)*f1
             fine = self.sa(fine)*fine
-        p2 = self.Translayer2_1(self.a2(f2) if hasattr(self, "a2") else f2)
+        enhanced_f2 = (self.a2(f2, f3) if self.a2_cross else self.a2(f2)) if hasattr(self, "a2") else f2
+        p2 = self.Translayer2_1(enhanced_f2)
         p3 = self.b3(self.Translayer3_1(f3))
         p4 = self.b4(self.Translayer4_1(f4))
         if self.fusion == "dual_path":
