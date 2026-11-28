@@ -1,0 +1,38 @@
+# Both A replaced: original spatial gate + shared-QKV directional local attention.
+# Original B/C, original aligned topology, no MLP/gamma/LN/outer residual.
+architecture: polyp_pvt_slots_b2
+upstream: ../vendor/Polyp-PVT
+encoder_checkpoint: ../checkpoints/pvt_v2_b2.pth
+train_manifest: ../data/polyp_full/train_all.csv
+output: ../runs/polyp_pvt_slots_three_head_directional_a
+expected_train_count: 1450
+image_size: 352
+epochs: 99
+batch_size: 16
+learning_rate: 0.0001
+weight_decay: 0.0001
+gradient_clip: 0.5
+augmentation: none
+scales: [0.75, 1.0, 1.25]
+workers: 4
+seed: 42
+device: cuda
+
+slots:
+  cfm: false
+  deep_supervision: true
+  width: 32
+  a: true
+  a_f2: true
+  a1_variant: directional_context
+  a2_variant: directional_context
+  b: true
+  c: true
+  a_residual: false
+  b_residual: false
+  d_state: 16
+  d_conv: 4
+  expand: 2
+  backend: auto
+
+aux_weights: [0.5, 0.5]

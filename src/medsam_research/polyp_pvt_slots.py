@@ -56,15 +56,15 @@ def validate_slot_options(options):
     if ablation != "none":
         if not all(options.get(k, False) for k in ("a", "a_f2", "b", "c", "deep_supervision")) or options.get("cfm", True):
             raise ValueError("w/o ablations require full A/B/C, a_f2, three heads and cfm=False")
-    if options.get("a1_variant", "original") not in {"original", "balanced_star", "dual_stream_gated", "multiscale_spatial", "multiscale_spatial_no_scale", "original_mlp"}:
-        raise ValueError("a1_variant must be original, balanced_star, dual_stream_gated, multiscale_spatial, multiscale_spatial_no_scale or original_mlp")
+    if options.get("a1_variant", "original") not in {"original", "balanced_star", "dual_stream_gated", "multiscale_spatial", "multiscale_spatial_no_scale", "original_mlp", "directional_context"}:
+        raise ValueError("a1_variant must be original, balanced_star, dual_stream_gated, multiscale_spatial, multiscale_spatial_no_scale, original_mlp or directional_context")
     if options.get("a1_variant", "original") != "original":
         if not options.get("a", False):
             raise ValueError("non-original A1 requires a=True")
         if options.get("a_residual", False):
             raise ValueError("Set a_residual=False for non-original A1; multiscale_spatial already has two intrinsic residuals")
-    if options.get("a2_variant", "original") not in {"original", "balanced_star", "dual_stream_gated", "multiscale_spatial", "multiscale_spatial_no_scale", "original_mlp"}:
-        raise ValueError("a2_variant must be original, balanced_star, dual_stream_gated, multiscale_spatial, multiscale_spatial_no_scale or original_mlp")
+    if options.get("a2_variant", "original") not in {"original", "balanced_star", "dual_stream_gated", "multiscale_spatial", "multiscale_spatial_no_scale", "original_mlp", "directional_context"}:
+        raise ValueError("a2_variant must be original, balanced_star, dual_stream_gated, multiscale_spatial, multiscale_spatial_no_scale, original_mlp or directional_context")
     if options.get("a2_variant", "original") != "original":
         if not options.get("a_f2", False):
             raise ValueError("non-original A2 requires a_f2=True")
@@ -157,7 +157,10 @@ class PolypPVTSlots(nn.Module):
             else:
                 self.aligned_fusion = AlignedConcatFusion(width)
         if a:
-            if a1_variant == "original_mlp":
+            if a1_variant == "directional_context":
+                from .directional_context_a import DirectionalContextA
+                self.cim = DirectionalContextA(64)
+            elif a1_variant == "original_mlp":
                 from .spatial_context_mlp_a import SpatialContextMLPA
                 self.cim = SpatialContextMLPA(64)
             elif a1_variant == "multiscale_spatial_no_scale":
@@ -177,7 +180,10 @@ class PolypPVTSlots(nn.Module):
         elif ablation != "wo_a":
             self.ca, self.sa = baseline.ca, baseline.sa
         if a_f2:
-            if a2_variant == "original_mlp":
+            if a2_variant == "directional_context":
+                from .directional_context_a import DirectionalContextA
+                self.a2 = DirectionalContextA(128)
+            elif a2_variant == "original_mlp":
                 from .spatial_context_mlp_a import SpatialContextMLPA
                 self.a2 = SpatialContextMLPA(128)
             elif a2_variant == "multiscale_spatial_no_scale":
